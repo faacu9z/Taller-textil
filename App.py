@@ -13,6 +13,7 @@ st.markdown("""
     .stButton>button:hover { background-color: #333333; color: white; }
     .card-pedido { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .alerta-roja { color: #D32F2F; font-weight: bold; background-color: #FFEBEE; padding: 2px 6px; border-radius: 4px; }
+    .modal-detalle { background: #FFFFFF; padding: 25px; border-radius: 12px; border: 1px solid #E0E0E0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -97,7 +98,7 @@ with tab_nuevo:
         with col_f2:
             cantidad = st.number_input("Cantidad", min_value=1, value=10)
             diseno = st.text_input("Detalle del Diseño / Archivo")
-            archivo_pc = st.text_input("Nro de Archivo en PC (Opcional, se puede poner después)", value="")
+            archivo_pc = st.text_input("Nro de Archivo en PC (Opcional)", value="")
             
         submitted = st.form_submit_button("Guardar y Registrar Pedido")
         if submitted and cliente:
@@ -109,10 +110,10 @@ with tab_nuevo:
             hora_str = ahora_argentina.strftime("%H:%M")
             anio_str = ahora_argentina.strftime("%Y")
             
-            # DataFrame inicial vacío para la grilla de talles con las columnas solicitadas
+            # DataFrame inicial con columnas Nombre, Talle, Número y Short (booleano)
             df_vacio = pd.DataFrame(
-                [{"Nombre": "", "Talle": "", "Número": ""}],
-                columns=["Nombre", "Talle", "Número"]
+                [{"Nombre": "", "Talle": "", "Número": "", "Short": False}],
+                columns=["Nombre", "Talle", "Número", "Short"]
             )
             
             nuevo_registro = pd.DataFrame([{
@@ -133,7 +134,7 @@ with tab_nuevo:
             }])
             
             st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_registro], ignore_index=True)
-            st.success(f"¡Pedido guardado con éxito!")
+            st.success(f"¡Pedido guardado con éxito! Ya podés ver los detalles en la pestaña 'Pedidos en Curso'.")
 
 # --- PESTAÑA 2: PEDIDOS INGRESADOS ---
 with tab_lista:
@@ -164,7 +165,7 @@ with tab_lista:
 
             with st.container():
                 st.markdown('<div class="card-pedido">', unsafe_allow_html=True)
-                col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
+                col1, col2, col3, col4 = st.columns([1.5, 2, 2, 2])
                 
                 with col1:
                     st.markdown(f"#### **{id_formateado}**")
@@ -174,7 +175,7 @@ with tab_lista:
                         st.caption(f"📅 {row['Fecha']} - {row['Hora']}")
                     st.caption(f"Vendedor: {row['Vendedor']}")
                     
-                    # Campo para editar el número de PC en cualquier momento
+                    # Modificar número de PC de forma independiente
                     nuevo_pc = st.text_input("Nro Archivo PC", value=row["ArchivoPC"], key=f"pc_{index}")
                     if nuevo_pc != row["ArchivoPC"]:
                         st.session_state.pedidos.at[index, "ArchivoPC"] = nuevo_pc.strip() if nuevo_pc.strip() else "S/N"
@@ -206,20 +207,52 @@ with tab_lista:
                         url_wa = f"https://wa.me/{row['Telefono']}?text={mensaje.replace(' ', '%20')}"
                         st.markdown(f"[💬 Enviar WhatsApp]({url_wa})", unsafe_allow_html=True)
 
-                # --- EXPANDER CON CUADRÍCULA / TABLA EDITABLE DE TALLES ---
-                with st.expander("👕 Ver / Editar Cuadrícula de Talles, Nombres y Números"):
-                    st.write("Agregá las filas necesarias con el botón '+' de la tabla:")
-                    
-                    # Tabla interactiva (Data Editor) con Columnas: Nombre | Talle | Número
-                    tabla_actualizada = st.data_editor(
-                        row["TablaTalles"],
-                        num_rows="dynamic",
-                        key=f"tabla_talles_{index}",
-                        use_container_width=True
-                    )
-                    
-                    # Guardar cambios automáticamente si el usuario edita la tabla
-                    if not tabla_actualizada.equals(row["TablaTalles"]):
-                        st.session_state.pedidos.at[index, "TablaTalles"] = tabla_actualizada
+                st.markdown('---')
+
+                # --- SECCIÓN INTERNA DEL PEDIDO (ABIERTA DIRECTAMENTE EN LA TARJETA) ---
+                st.markdown(f"### 📂 Detalle del Pedido: {id_formateado}")
+                st.write(f"**Descripción:** Pedido de {row['Cantidad']} {row['Prenda']} para el cliente **{row['Cliente']}**. Estado actual: *{row['Estado']}*.")
+                
+                st.markdown("---")
+                st.write("#### 📋 Listado de Nombres, Talles, Números y Shorts")
+                
+                # Opción para marcar que TODOS llevan short
+                col_btn_short, _ = st.columns([2, 4])
+                with col_btn_short:
+                    if st.button("✅ Marcar que TODOS llevan Short", key=f"btn_todos_short_{index}"):
+                        df_temp = row["TablaTalles"].copy()
+                        if not df_temp.empty:
+                            df_temp["Short"] = True
+                            st.session_state.pedidos.at[index, "TablaTalles"] = df_temp
+                            st.success("¡Se marcó que todos llevan short!")
+                            st.rerun()
+
+                # Editor de datos estable con configuración de tipos explícita para evitar pérdida de foco/valores
+                df_actual = row["TablaTalles"].copy()
+                
+                # Asegurar tipos de datos correctos en el DataFrame
+                if "Short" not in df_actual.columns:
+                    df_actual["Short"] = False
+                df_actual["Short"] = df_actual["Short"].astype(bool)
+                df_actual["Nombre"] = df_actual["Nombre"].astype(str)
+                df_actual["Talle"] = df_actual["Talle"].astype(str)
+                df_actual["Número"] = df_actual["Número"].astype(str)
+
+                tabla_editada = st.data_editor(
+                    df_actual,
+                    num_rows="dynamic",
+                    key=f"editor_talles_{index}",
+                    use_container_width=True,
+                    column_config={
+                        "Nombre": st.column_config.TextColumn("Nombre"),
+                        "Talle": st.column_config.TextColumn("Talle"),
+                        "Número": st.column_config.TextColumn("Número"),
+                        "Short": st.column_config.CheckboxColumn("Lleva Short", default=False)
+                    }
+                )
+
+                # Guardado automático e inmediato al interactuar con la tabla
+                if not tabla_editada.equals(df_actual):
+                    st.session_state.pedidos.at[index, "TablaTalles"] = tabla_editada
 
                 st.markdown('</div>', unsafe_allow_html=True)
