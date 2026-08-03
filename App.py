@@ -1,24 +1,61 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import os
+from pathlib import Path
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
 
-# --- FUNCIONES DE PERSISTENCIA CON SESSION STATE ---
+# --- RUTA DE GUARDADO LOCAL AUTOMÁTICA ---
+CARPETA_DATOS = Path.home() / "TallerTextilData"
+CARPETA_DATOS.mkdir(parents=True, exist_ok=True)
+ARCH_EXCEL = CARPETA_DATOS / "base_datos_taller.xlsx"
+
+# --- FUNCIONES DE PERSISTENCIA LOCAL (EXCEL) ---
 def cargar_datos_iniciales():
     if "usuarios" not in st.session_state:
         st.session_state.usuarios = {"admin": "1234"}
 
+    # Cargar Pedidos
     if "pedidos" not in st.session_state:
-        st.session_state.pedidos = pd.DataFrame(columns=[
-            "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
-            "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
-            "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
-        ])
+        if ARCH_EXCEL.exists():
+            try:
+                df_p = pd.read_excel(ARCH_EXCEL, sheet_name="Pedidos")
+                if "Historial_Pagos" in df_p.columns:
+                    df_p["Historial_Pagos"] = df_p["Historial_Pagos"].apply(lambda x: eval(x) if pd.notnull(x) and x != "" else [])
+                st.session_state.pedidos = df_p
+            except:
+                st.session_state.pedidos = pd.DataFrame(columns=[
+                    "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+                    "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+                    "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+                ])
+        else:
+            st.session_state.pedidos = pd.DataFrame(columns=[
+                "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+                "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+                "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+            ])
 
+    # Cargar Gastos
     if "gastos" not in st.session_state:
-        st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
+        if ARCH_EXCEL.exists():
+            try:
+                st.session_state.gastos = pd.read_excel(ARCH_EXCEL, sheet_name="Gastos")
+            except:
+                st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
+        else:
+            st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
+
+def guardar_en_disco():
+    with pd.ExcelWriter(ARCH_EXCEL, engine="openpyxl") as writer:
+        df_p_guardar = st.session_state.pedidos.copy()
+        if "Historial_Pagos" in df_p_guardar.columns:
+            df_p_guardar["Historial_Pagos"] = df_p_guardar["Historial_Pagos"].astype(str)
+        
+        df_p_guardar.to_excel(writer, sheet_name="Pedidos", index=False)
+        st.session_state.gastos.to_excel(writer, sheet_name="Gastos", index=False)
 
 cargar_datos_iniciales()
 
@@ -28,7 +65,6 @@ st.markdown("""
     .main { background-color: #FAFAFA; }
     .stButton>button { width: 100%; border-radius: 6px; font-weight: 500; }
     .card-pedido { background: white; padding: 15px 20px; border-radius: 10px; border: 1px solid #EAEAEA; margin-bottom: 12px; }
-    .alerta-roja { color: #D32F2F; font-weight: bold; background-color: #FFEBEE; padding: 2px 6px; border-radius: 4px; }
     .metric-card { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; text-align: center; }
     .col-bloque { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; height: 100%; }
     </style>
@@ -83,11 +119,11 @@ if st.session_state.pedido_seleccionado is not None:
             st.session_state.pedido_seleccionado = None
             st.rerun()
     with col_v3:
-        # --- ELIMINAR PEDIDO (CON CONFIRMACIÓN) ---
         with st.popover("🗑️ Eliminar Pedido"):
-            st.error("¿Estás seguro de que quieres eliminar este pedido de forma permanente?")
+            st.error("¿Estás seguro de que quieres eliminar este pedido?")
             if st.button("Sí, Confirmar Eliminación", type="primary", key="del_ped"):
                 st.session_state.pedidos = st.session_state.pedidos.drop(idx)
+                guardar_en_disco()
                 st.session_state.pedido_seleccionado = None
                 st.rerun()
 
@@ -97,8 +133,14 @@ if st.session_state.pedido_seleccionado is not None:
     with col_izq:
         st.markdown("<div class='col-bloque'>", unsafe_allow_html=True)
         st.markdown("### 📋 Datos Generales")
-        st.write(f"**👤 Cliente:** {row['Cliente']} | **📲 WhatsApp:** {row['Telefono']}")
+        
+        # Link directo a WhatsApp
+        num_wsp = ''.join(filter(str.isdigit, str(row['Telefono'])))
+        link_wsp = f"https://wa.me/{num_wsp}" if num_wsp else "#"
+        st.markdown(f"**👤 Cliente:** {row['Cliente']} | **📲 WhatsApp:** <a href='{link_wsp}' target='_blank'>{row['Telefono']} (Enviar msj)</a>", unsafe_allow_html=True)
+        
         st.write(f"**🤝 Vendedor:** {row['Vendedor']} | **📅 Ingreso:** {row['Fecha']}")
+        st.write(f"**📁 Archivo en PC:** {row['ArchivoPC']}")
         st.divider()
         st.write(f"**👕 Prenda:** {row['Prenda']} (x{row['Cantidad']})")
         st.write(f"**🎨 Diseño:** {row['Diseno']}")
@@ -106,6 +148,7 @@ if st.session_state.pedido_seleccionado is not None:
         nuevo_est_det = st.selectbox("📌 Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]))
         if nuevo_est_det != row["Estado"]:
             st.session_state.pedidos.at[idx, "Estado"] = nuevo_est_det
+            guardar_en_disco()
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -118,7 +161,7 @@ if st.session_state.pedido_seleccionado is not None:
         c_m3.metric("Falta Pagar", f"${row['Saldo']:,.0f}")
 
         if isinstance(row['Historial_Pagos'], list) and len(row['Historial_Pagos']) > 0:
-            df_historial = pd.DataFrame(row['Historial_Pagos']).drop(columns=["Fecha_Obj"])
+            df_historial = pd.DataFrame(row['Historial_Pagos']).drop(columns=["Fecha_Obj"], errors="ignore")
             st.dataframe(df_historial, use_container_width=True, hide_index=True)
             
         if row['Saldo'] > 0:
@@ -134,13 +177,14 @@ if st.session_state.pedido_seleccionado is not None:
                         st.session_state.pedidos.at[idx, "Historial_Pagos"] = historial_actual
                         st.session_state.pedidos.at[idx, "Total_Pagado"] = row['Total_Pagado'] + monto_a_pagar
                         st.session_state.pedidos.at[idx, "Saldo"] = row['Precio_Total'] - (row['Total_Pagado'] + monto_a_pagar)
+                        guardar_en_disco()
                         st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 # --- BARRA SUPERIOR ---
 col_top1, col_top2 = st.columns([6, 1])
-with col_top1: st.title("🧵 Gestión de Producción")
+with col_top1: st.title("🧵 Gestión de Producción (Local)")
 with col_top2:
     st.write(f"👤 **{st.session_state.vendedor_actual}**")
     if st.button("Salir"):
@@ -155,12 +199,13 @@ with tab_nuevo:
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             cliente = st.text_input("Nombre del Cliente")
-            telefono = st.text_input("WhatsApp")
+            telefono = st.text_input("WhatsApp (Ej: 549112345678)")
             prenda = st.selectbox("Tipo de Prenda", tipos_prenda)
             precio_tot = st.number_input("Precio Total ($)", min_value=0.0, step=1000.0)
         with col_f2:
             cantidad = st.number_input("Cantidad", min_value=1, value=10)
-            diseno = st.text_input("Diseño / Archivo")
+            diseno = st.text_input("Diseño")
+            archivo_pc = st.text_input("Nº / Nombre de Archivo en PC", value="S/N")
             sena = st.number_input("Seña Inicial ($)", min_value=0.0, step=1000.0)
             mp_sena = st.selectbox("Medio de Pago (Seña)", medios_pago)
 
@@ -170,7 +215,7 @@ with tab_nuevo:
             
             nuevo_df = pd.DataFrame([{
                 "ID_Base": len(st.session_state.pedidos) + 1, "Cliente": cliente, "Telefono": telefono, "Prenda": prenda, "Cantidad": cantidad,
-                "Diseno": diseno, "ArchivoPC": "S/N", "TablaTalles": pd.DataFrame([{"Nombre": "", "Talle": "", "Número": "", "Short": False}]),
+                "Diseno": diseno, "ArchivoPC": archivo_pc, "TablaTalles": str([{"Nombre": "", "Talle": "", "Número": "", "Short": False}]),
                 "Observaciones": "", "Imagen": None, "Estado": estados_posibles[0], "Vendedor": st.session_state.vendedor_actual,
                 "Fecha_Obj": ahora, "Fecha": ahora.strftime("%d/%m/%Y"), "Hora": ahora.strftime("%H:%M"), "Anio": ahora.strftime("%Y"),
                 "Precio_Total": precio_tot, "Sena": sena, "Total_Pagado": sena, "Saldo": precio_tot - sena, "Historial_Pagos": historial_inicial
@@ -180,38 +225,52 @@ with tab_nuevo:
                 st.session_state.pedidos = nuevo_df
             else:
                 st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_df], ignore_index=True)
-            st.success("¡Pedido guardado con éxito!")
+            
+            guardar_en_disco()
+            st.success("¡Pedido guardado con éxito en tu PC!")
 
-# --- PESTAÑA 2: LISTA DE PEDIDOS ---
+# --- PESTAÑA 2: LISTA DE PEDIDOS (CON BUSCADOR) ---
 with tab_lista:
-    if st.session_state.pedidos.empty:
+    busqueda = st.text_input("🔍 Buscar pedido (Nombre, Prenda, Archivo o ID)")
+    
+    df_mostrar = st.session_state.pedidos
+    if not df_mostrar.empty and busqueda:
+        busqueda = busqueda.lower()
+        mask = (
+            df_mostrar["Cliente"].astype(str).str.lower().str.contains(busqueda) |
+            df_mostrar["Prenda"].astype(str).str.lower().str.contains(busqueda) |
+            df_mostrar["ArchivoPC"].astype(str).str.lower().str.contains(busqueda) |
+            df_mostrar["ID_Base"].astype(str).str.contains(busqueda)
+        )
+        df_mostrar = df_mostrar[mask]
+
+    if df_mostrar.empty:
         st.info("No hay pedidos.")
     else:
-        for idx, row in st.session_state.pedidos.sort_values(by="Fecha_Obj", ascending=False).iterrows():
+        for idx, row in df_mostrar.sort_values(by="Fecha_Obj", ascending=False).iterrows():
             with st.container():
                 st.markdown('<div class="card-pedido">', unsafe_allow_html=True)
-                c1, c2, c3, c4 = st.columns([1.5, 3, 2, 2])
+                c1, c2, c3, c4 = st.columns([1.5, 3, 2, 2.5])
                 with c1:
                     if st.button(f"📄 #{row['ID_Base']:03d}", key=f"btn_p_{idx}"):
                         st.session_state.pedido_seleccionado = idx
                         st.rerun()
                 with c2: st.write(f"**{row['Cliente']}** - {row['Prenda']}")
                 with c3: st.write(f"*{row['Estado']}*")
-                with c4: st.markdown(f"**Falta: ${row['Saldo']:,.0f}**")
+                with c4: st.markdown(f"<span style='color:#2E7D32; font-weight:bold;'>Pagó: ${row['Total_Pagado']:,.0f}</span><br><span style='color:#D32F2F; font-weight:bold;'>Falta: ${row['Saldo']:,.0f}</span>", unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
 # --- PESTAÑA 3: FINANZAS Y STOCK ---
 with tab_finanzas:
     st.markdown("### 📊 Control de Finanzas y Stock")
     
-    # Cálculo de métricas generales de ingresos y gastos
     total_ingresos = st.session_state.pedidos["Total_Pagado"].sum() if not st.session_state.pedidos.empty else 0.0
     total_gastos = st.session_state.gastos["Total"].sum() if not st.session_state.gastos.empty else 0.0
     balance_neto = total_ingresos - total_gastos
 
     c_f1, c_f2, c_f3 = st.columns(3)
-    c_f1.metric("💵 Total Ingresado (Señas y Pagos)", f"${total_ingresos:,.0f}")
-    c_f2.metric("🛒 Total Gastado (Insumos)", f"${total_gastos:,.0f}")
+    c_f1.metric("💵 Total Ingresado", f"${total_ingresos:,.0f}")
+    c_f2.metric("🛒 Total Gastado", f"${total_gastos:,.0f}")
     c_f3.metric("📈 Balance Neto", f"${balance_neto:,.0f}", delta=f"${balance_neto:,.0f}")
     
     st.divider()
@@ -231,6 +290,8 @@ with tab_finanzas:
                     st.session_state.gastos = n_gasto
                 else:
                     st.session_state.gastos = pd.concat([st.session_state.gastos, n_gasto], ignore_index=True)
+                
+                guardar_en_disco()
                 st.rerun()
                 
     with col_g2:
@@ -246,10 +307,10 @@ with tab_finanzas:
                     col_det2.write(f"🛒 {row_g['Item']} (x{row_g['Cantidad']})")
                     col_det3.write(f"**${row_g['Total']:,.0f}**")
                     with col_det4:
-                        # --- ELIMINAR GASTO (CON CONFIRMACIÓN) ---
                         with st.popover("🗑️"):
                             st.write("¿Eliminar este gasto?")
                             if st.button("Sí", key=f"del_g_{idx_g}"):
                                 st.session_state.gastos = st.session_state.gastos.drop(idx_g)
+                                guardar_en_disco()
                                 st.rerun()
                     st.markdown("</div>", unsafe_allow_html=True)
