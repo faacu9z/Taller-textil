@@ -1,9 +1,48 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import os
+import pickle
 
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
+
+# Archivos locales donde se guardará la información
+ARCHIVO_PEDIDOS = "pedidos_taller.pkl"
+ARCHIVO_GASTOS = "gastos_taller.pkl"
+ARCHIVO_USUARIOS = "usuarios_taller.pkl"
+
+# --- FUNCIONES DE GUARDADO Y CARGA LOCAL ---
+def guardar_datos():
+    with open(ARCHIVO_PEDIDOS, "wb") as f:
+        pickle.dump(st.session_state.pedidos, f)
+    with open(ARCHIVO_GASTOS, "wb") as f:
+        pickle.dump(st.session_state.gastos, f)
+    with open(ARCHIVO_USUARIOS, "wb") as f:
+        pickle.dump(st.session_state.usuarios, f)
+
+def cargar_datos():
+    if os.path.exists(ARCHIVO_USUARIOS):
+        with open(ARCHIVO_USUARIOS, "rb") as f:
+            st.session_state.usuarios = pickle.load(f)
+    else:
+        st.session_state.usuarios = {"admin": "1234"}
+
+    if os.path.exists(ARCHIVO_PEDIDOS):
+        with open(ARCHIVO_PEDIDOS, "rb") as f:
+            st.session_state.pedidos = pickle.load(f)
+    else:
+        st.session_state.pedidos = pd.DataFrame(columns=[
+            "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+            "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+            "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+        ])
+
+    if os.path.exists(ARCHIVO_GASTOS):
+        with open(ARCHIVO_GASTOS, "rb") as f:
+            st.session_state.gastos = pickle.load(f)
+    else:
+        st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
 
 # Estilos visuales minimalistas
 st.markdown("""
@@ -18,27 +57,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE DATOS ---
-if "usuarios" not in st.session_state:
-    st.session_state.usuarios = {"admin": "1234"}
-
+# --- INICIALIZACIÓN Y CARGA DE DATOS ---
 if "vendedor_actual" not in st.session_state:
     st.session_state.vendedor_actual = None
 
 if "pedido_seleccionado" not in st.session_state:
     st.session_state.pedido_seleccionado = None
 
-if "gastos" not in st.session_state:
-    st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
+# Cargar los datos del disco duro al iniciar la app por primera vez
+if "datos_cargados" not in st.session_state:
+    cargar_datos()
+    st.session_state.datos_cargados = True
 
-if "pedidos" not in st.session_state:
-    st.session_state.pedidos = pd.DataFrame(columns=[
-        "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
-        "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
-        "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
-    ])
-
-# Actualizar base de datos vieja si le faltan las columnas de historial financiero
+# Actualizar base de datos vieja si le faltan columnas
 nuevas_cols = {"Precio_Total": 0.0, "Sena": 0.0, "Total_Pagado": 0.0, "Saldo": 0.0, "Historial_Pagos": None}
 for col, val in nuevas_cols.items():
     if col not in st.session_state.pedidos.columns:
@@ -101,6 +132,7 @@ if st.session_state.vendedor_actual is None:
                         st.warning("El usuario ya existe.")
                     else:
                         st.session_state.usuarios[nuevo_user] = nuevo_pass
+                        guardar_datos() # Guardar nuevo usuario en disco
                         st.success("¡Registrado con éxito! Ya podés iniciar sesión.")
     st.stop()
 
@@ -120,7 +152,6 @@ if st.session_state.pedido_seleccionado is not None:
 
     st.markdown(f"## 📂 Detalle del Pedido: {id_formateado}")
     
-    # --- BLOQUES SEPARADOS: DATOS vs FINANZAS ---
     col_izq, col_der = st.columns([1, 1.3])
     
     with col_izq:
@@ -142,6 +173,7 @@ if st.session_state.pedido_seleccionado is not None:
         nuevo_est_det = st.selectbox("Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]), key="est_det_unico", label_visibility="collapsed")
         if nuevo_est_det != row["Estado"]:
             st.session_state.pedidos.at[idx, "Estado"] = nuevo_est_det
+            guardar_datos()
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -149,7 +181,6 @@ if st.session_state.pedido_seleccionado is not None:
         st.markdown("<div class='col-bloque'>", unsafe_allow_html=True)
         st.markdown("### 💰 Finanzas y Pagos")
         
-        # Métricas de resumen compactas
         c_m1, c_m2, c_m3 = st.columns(3)
         c_m1.metric("Precio Acordado", f"${row['Precio_Total']:,.0f}")
         c_m2.metric("Abonado", f"${row['Total_Pagado']:,.0f}")
@@ -188,6 +219,7 @@ if st.session_state.pedido_seleccionado is not None:
                                 st.session_state.pedidos.at[idx, "Historial_Pagos"] = historial_actual
                                 st.session_state.pedidos.at[idx, "Total_Pagado"] = nuevo_pagado
                                 st.session_state.pedidos.at[idx, "Saldo"] = row['Precio_Total'] - nuevo_pagado
+                                guardar_datos()
                                 st.success("Pago registrado!")
                                 st.rerun()
             else:
@@ -200,19 +232,20 @@ if st.session_state.pedido_seleccionado is not None:
                     if st.form_submit_button("Actualizar"):
                         st.session_state.pedidos.at[idx, "Precio_Total"] = nuevo_precio
                         st.session_state.pedidos.at[idx, "Saldo"] = nuevo_precio - row['Total_Pagado']
+                        guardar_datos()
                         st.success("Actualizado.")
                         st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
 
-    # --- LISTA DE TALLES, OBSERVACIONES E IMAGEN ---
     st.markdown("### 📋 Talles y Nombres")
     if st.button("✅ Marcar TODOS con Short"):
         df_temp = row["TablaTalles"].copy()
         if not df_temp.empty:
             df_temp["Short"] = True
             st.session_state.pedidos.at[idx, "TablaTalles"] = df_temp
+            guardar_datos()
             st.rerun()
 
     with st.form(f"form_talles_{idx}"):
@@ -232,6 +265,7 @@ if st.session_state.pedido_seleccionado is not None:
         )
         if st.form_submit_button("Guardar Cambios de Talles"):
             st.session_state.pedidos.at[idx, "TablaTalles"] = tabla_editada
+            guardar_datos()
             st.success("Guardado!")
 
     st.divider()
@@ -240,18 +274,21 @@ if st.session_state.pedido_seleccionado is not None:
     nueva_obs = st.text_area("Notas:", value=obs_actual, key=f"obs_{idx}")
     if nueva_obs != obs_actual:
         st.session_state.pedidos.at[idx, "Observaciones"] = nueva_obs
+        guardar_datos()
 
     st.divider()
     st.markdown("### 🖼️ Imagen del Pedido")
     archivo_img = st.file_uploader("Subir imagen", type=["png", "jpg", "jpeg"], key=f"img_{idx}")
     if archivo_img:
         st.session_state.pedidos.at[idx, "Imagen"] = archivo_img
+        guardar_datos()
         st.success("Imagen cargada!")
 
     if "Imagen" in row and row["Imagen"] is not None:
         st.image(row["Imagen"], use_column_width=True)
         if st.button("🗑️ Eliminar Imagen"):
             st.session_state.pedidos.at[idx, "Imagen"] = None
+            guardar_datos()
             st.rerun()
 
     st.stop()
@@ -320,6 +357,7 @@ with tab_nuevo:
                 "Historial_Pagos": historial_inicial
             }])
             st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_df], ignore_index=True)
+            guardar_datos() # Guardar cambios en el disco
             st.success("¡Pedido guardado!")
 
 # --- PESTAÑA 2: LISTA DE PEDIDOS ---
@@ -362,6 +400,7 @@ with tab_lista:
                         n_est = st.selectbox("Estado", estados_posibles, index=estados_posibles.index(row["Estado"]), key=f"est_{idx}", label_visibility="collapsed")
                         if n_est != row["Estado"]:
                             st.session_state.pedidos.at[idx, "Estado"] = n_est
+                            guardar_datos()
                             st.rerun()
                     with c5:
                         st.caption(f"💰 Total: ${row['Precio_Total']:,.0f}")
@@ -422,6 +461,7 @@ with tab_finanzas:
                     "Item": item, "Cantidad": cant_gasto, "Precio_Unitario": precio_uni, "Total": cant_gasto * precio_uni
                 }])
                 st.session_state.gastos = pd.concat([st.session_state.gastos, n_gasto], ignore_index=True)
+                guardar_datos() # Guardar gasto en disco
                 st.rerun()
                 
     with col_g2:
