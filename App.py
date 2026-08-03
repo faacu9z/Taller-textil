@@ -58,7 +58,7 @@ def guardar_en_disco():
             df_p_guardar.to_excel(writer, sheet_name="Pedidos", index=False)
             st.session_state.gastos.to_excel(writer, sheet_name="Gastos", index=False)
     except ModuleNotFoundError:
-        pass  # Si falta openpyxl en Streamlit Cloud, permite que la app siga corriendo en memoria sin romperse
+        pass
 
 cargar_datos_iniciales()
 
@@ -259,8 +259,7 @@ with tab_lista:
                         st.rerun()
                 with c2: st.write(f"**{row['Cliente']}** - {row['Prenda']}")
                 with c3: st.write(f"*{row['Estado']}*")
-                # Se agregó unsafe_allow_html=True aquí para que los estilos de color funcionen correctamente
-                with c4: st.markdown(f"<span style='color:#2E7D32; font-weight:bold;'>Pagó: ${row['Total_Pagado']:,.0f}</span><br><span style='color:#D32F2F; font-weight:bold;'>Falta: ${row['Saldo']:,.0f}</span>", unsafe_allow_html=True)
+                with c4: st.markdown(f"${row['Total_Pagado']:,.0f} <br> ${row['Saldo']:,.0f}", unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
 
 # --- PESTAÑA 3: FINANZAS Y STOCK ---
@@ -317,3 +316,4 @@ with tab_finanzas:
                                 guardar_en_disco()
                                 st.rerun()
                     st.markdown("</div>", unsafe_allow_html=True)
+                    
