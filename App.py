@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import os
 from pathlib import Path
 from PIL import Image
-import io
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
@@ -212,9 +211,12 @@ if st.session_state.pedido_seleccionado is not None:
         )
         
         if st.button("Guardar Cambios de Talles", key=f"btn_guardar_talles_{idx}"):
-            st.session_state.pedidos.at[idx, "TablaTalles"] = df_editado.to_dict(orient="records")
+            # CORRECCIÓN AQUÍ: Forzamos la conversión estricta a lista de diccionarios planos para evitar errores de tipo en Pandas
+            registros_limpios = df_editado.to_dict(orient="records")
+            st.session_state.pedidos.at[idx, "TablaTalles"] = registros_limpios
             guardar_en_disco()
             st.success("¡Talles guardados con éxito!")
+            st.rerun()
 
         st.markdown("---")
         st.markdown("#### 📌 Observaciones")
