@@ -169,7 +169,7 @@ if st.session_state.pedido_seleccionado is not None:
                                 "Fecha_Obj": ahora,
                                 "Fecha": ahora.strftime("%d/%m/%Y"),
                                 "Hora": ahora.strftime("%H:%M"),
-                                "Vendedor": st.session_state.vendedor_actual, # Vendedor que cobra el saldo
+                                "Vendedor": st.session_state.vendedor_actual,
                                 "Concepto": "Cancelación de Saldo",
                                 "Monto": monto_a_pagar,
                                 "Medio": medio_pago_saldo
@@ -291,7 +291,6 @@ with tab_nuevo:
         if st.form_submit_button("Guardar Pedido") and cliente:
             ahora = datetime.utcnow() - timedelta(hours=3)
             
-            # Generar primer pago para el historial
             historial_inicial = []
             if sena > 0:
                 historial_inicial.append({
@@ -365,30 +364,45 @@ with tab_lista:
 
 # --- PESTAÑA 3: FINANZAS Y STOCK ---
 with tab_finanzas:
-    st.markdown("### 📊 Control y Stock Semanal")
+    st.markdown("### 📊 Control de Finanzas y Stock")
+    
+    # Selector de período
+    periodo = st.radio("Seleccione el período de análisis:", ["Semanal", "Mensual", "Anual", "Histórico Total"], horizontal=True)
     
     hoy = datetime.utcnow() - timedelta(hours=3)
-    inicio_sem = hoy - timedelta(days=hoy.weekday())
-    inicio_sem = inicio_sem.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # 1. Calcular Ingresos reales de la semana (leyendo fecha de cada pago en los historiales)
+    if periodo == "Semanal":
+        inicio_periodo = hoy - timedelta(days=hoy.weekday())
+        inicio_periodo = inicio_periodo.replace(hour=0, minute=0, second=0, microsecond=0)
+        lbl_periodo = "de la Semana"
+    elif periodo == "Mensual":
+        inicio_periodo = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        lbl_periodo = "del Mes"
+    elif periodo == "Anual":
+        inicio_periodo = hoy.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        lbl_periodo = "del Año"
+    else:
+        inicio_periodo = datetime(2000, 1, 1) # Fecha antigua para incluir todo
+        lbl_periodo = "Total"
+    
+    # 1. Calcular Ingresos reales leyendo el historial de pagos
     total_ingresos = 0.0
     for pagos_lista in st.session_state.pedidos["Historial_Pagos"]:
         if isinstance(pagos_lista, list):
             for pago in pagos_lista:
-                if "Fecha_Obj" in pago and pago["Fecha_Obj"] >= inicio_sem:
+                if "Fecha_Obj" in pago and pago["Fecha_Obj"] >= inicio_periodo:
                     total_ingresos += float(pago["Monto"])
                     
-    # 2. Calcular Gastos reales de la semana
-    gastos_sem = st.session_state.gastos[st.session_state.gastos["Fecha_Obj"] >= inicio_sem]
-    total_gastos = gastos_sem["Total"].sum() if not gastos_sem.empty else 0.0
+    # 2. Calcular Gastos reales del período seleccionado
+    gastos_periodo = st.session_state.gastos[st.session_state.gastos["Fecha_Obj"] >= inicio_periodo]
+    total_gastos = gastos_periodo["Total"].sum() if not gastos_periodo.empty else 0.0
     
     balance_neto = total_ingresos - total_gastos
 
     col_m1, col_m2, col_m3 = st.columns(3)
-    with col_m1: st.markdown(f"<div class='metric-card'><h4>📈 Ingresos Semana</h4><h2>${total_ingresos:,.2f}</h2><p>Pagos y señas recibidas esta semana</p></div>", unsafe_allow_html=True)
-    with col_m2: st.markdown(f"<div class='metric-card'><h4>📉 Gastos Semana</h4><h2 style='color:#D32F2F;'>${total_gastos:,.2f}</h2><p>Compras e insumos</p></div>", unsafe_allow_html=True)
-    with col_m3: st.markdown(f"<div class='metric-card'><h4>⚖️ Balance</h4><h2 style='color:{'#2E7D32' if balance_neto>=0 else '#D32F2F'};'>${balance_neto:,.2f}</h2><p>Ingresos - Gastos</p></div>", unsafe_allow_html=True)
+    with col_m1: st.markdown(f"<div class='metric-card'><h4>📈 Ingresos {lbl_periodo}</h4><h2>${total_ingresos:,.2f}</h2><p>Pagos y señas recibidas</p></div>", unsafe_allow_html=True)
+    with col_m2: st.markdown(f"<div class='metric-card'><h4>📉 Gastos {lbl_periodo}</h4><h2 style='color:#D32F2F;'>${total_gastos:,.2f}</h2><p>Compras e insumos</p></div>", unsafe_allow_html=True)
+    with col_m3: st.markdown(f"<div class='metric-card'><h4>⚖️ Balance {lbl_periodo}</h4><h2 style='color:{'#2E7D32' if balance_neto>=0 else '#D32F2F'};'>${balance_neto:,.2f}</h2><p>Ingresos - Gastos</p></div>", unsafe_allow_html=True)
 
     st.divider()
     
@@ -408,9 +422,9 @@ with tab_finanzas:
                 st.rerun()
                 
     with col_g2:
-        st.markdown("#### 📋 Historial de Compras")
-        if st.session_state.gastos.empty:
-            st.info("No hay gastos registrados aún.")
+        st.markdown(f"#### 📋 Historial de Compras ({periodo})")
+        if gastos_periodo.empty:
+            st.info(f"No hay gastos registrados en este período ({periodo.lower()}).")
         else:
-            df_g_mostrar = st.session_state.gastos.copy().sort_values(by="Fecha_Obj", ascending=False).drop(columns=["Fecha_Obj"])
+            df_g_mostrar = gastos_periodo.copy().sort_values(by="Fecha_Obj", ascending=False).drop(columns=["Fecha_Obj"])
             st.dataframe(df_g_mostrar, use_container_width=True, hide_index=True)
