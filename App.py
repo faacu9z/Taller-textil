@@ -107,6 +107,7 @@ if st.session_state.pedido_seleccionado is not None:
     with col_det1:
         st.write(f"**Cliente:** {row['Cliente']}")
         st.write(f"📲 **WhatsApp:** {row['Telefono']}")
+        st.write(f"👤 **Vendedor:** {row['Vendedor']}") # <-- Agregado en vista detallada
     with col_det2:
         st.write(f"**Prenda:** {row['Prenda']} (x{row['Cantidad']})")
         st.write(f"🎨 **Diseño:** {row['Diseno']}")
@@ -169,7 +170,7 @@ if st.session_state.pedido_seleccionado is not None:
 
     st.divider()
 
-    # --- SECCIÓN DE IMAGEN PARA IDENTIFICAR EL PEDIDO (UBICADA ABAJO DE TODO) ---
+    # --- SECCIÓN DE IMAGEN PARA IDENTIFICAR EL PEDIDO ---
     st.markdown("### 🖼️ Imagen de Referencia del Pedido")
     archivo_imagen = st.file_uploader("Subir imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key=f"img_subida_{idx}")
     
@@ -309,6 +310,7 @@ with tab_lista:
                     with col2:
                         st.write(f"**Cliente:** {row['Cliente']}")
                         st.write(f"📲 {row['Telefono']}")
+                        st.caption(f"👤 **Tomó:** {row['Vendedor']}") # <-- Agregado en la lista de pedidos principal
                         
                     with col3:
                         st.write(f"**Prenda:** {row['Prenda']} (x{row['Cantidad']})")
