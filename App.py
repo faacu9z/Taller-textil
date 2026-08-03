@@ -40,6 +40,20 @@ estados_posibles = [
     "6. Entregado"
 ]
 
+tipos_prenda = [
+    "camiseta sola", 
+    "camiseta + short", 
+    "sudadera", 
+    "sudadera + short", 
+    "chomba deportiva", 
+    "conjunto de invierno", 
+    "short", 
+    "pechera", 
+    "bandera", 
+    "gorra", 
+    "campera"
+]
+
 # --- SISTEMA DE LOGIN / AUTENTICACIÓN ---
 if st.session_state.vendedor_actual is None:
     st.markdown("<h2 style='text-align: center; color: #111;'>🧵 Taller Textil</h2>", unsafe_allow_html=True)
@@ -163,7 +177,6 @@ if st.session_state.pedido_seleccionado is not None:
         st.session_state.pedidos.at[idx, "Imagen"] = archivo_imagen
         st.success("¡Imagen cargada con éxito!")
 
-    # Mostrar la imagen actual si existe en el registro
     if "Imagen" in row and row["Imagen"] is not None:
         st.image(row["Imagen"], caption=f"Referencia visual - Pedido {id_formateado}", use_column_width=True)
         if st.button("🗑️ Eliminar Imagen", key=f"btn_eliminar_img_{idx}"):
@@ -195,7 +208,7 @@ with tab_nuevo:
         with col_f1:
             cliente = st.text_input("Nombre del Cliente", key="new_cliente")
             telefono = st.text_input("Celular / WhatsApp (ej: 549370...)", key="new_tel")
-            prenda = st.selectbox("Tipo de Prenda", ["Remera", "Buzo", "Camiseta de Fútbol", "Pantalón", "Otro"], key="new_prenda")
+            prenda = st.selectbox("Tipo de Prenda", tipos_prenda, key="new_prenda")
         with col_f2:
             cantidad = st.number_input("Cantidad", min_value=1, value=10, key="new_cant")
             diseno = st.text_input("Detalle del Diseño / Archivo", key="new_diseno")
