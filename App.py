@@ -5,20 +5,24 @@ from datetime import datetime
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
 
-# Estilos visuales rápidos para botones y tarjetas
+# Estilos visuales
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🧵 Control de Producción - Taller Textil")
-st.write("Aplicación para gestionar taller de textil y estado de prendas.")
+# --- INICIALIZACIÓN DE DATOS EN MEMORIA ---
+if "usuarios" not in st.session_state:
+    # Usuario por defecto para empezar (usuario: admin, pass: 1234)
+    st.session_state.usuarios = {"admin": "1234"}
 
-# Simulación de Base de Datos en memoria
+if "vendedor_actual" not in st.session_state:
+    st.session_state.vendedor_actual = None
+
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=[
-        "ID", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "Estado", "Fecha"
+        "ID", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "Estado", "Vendedor", "Fecha", "Hora", "Anio"
     ])
 
 estados_posibles = [
@@ -29,6 +33,52 @@ estados_posibles = [
     "5. Control de Calidad", 
     "6. Listo / Entregado"
 ]
+
+# --- SISTEMA DE LOGIN / AUTENTICACIÓN ---
+if st.session_state.vendedor_actual is None:
+    st.title("🔐 Acceso al Sistema - Taller Textil")
+    
+    tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrar Nuevo Vendedor"])
+    
+    with tab1:
+        st.subheader("Login de Vendedor")
+        user_ingreso = st.text_input("Usuario")
+        pass_ingreso = st.text_input("Contraseña", type="password")
+        
+        if st.button("Ingresar al Sistema"):
+            if user_ingreso in st.session_state.usuarios and st.session_state.usuarios[user_ingreso] == pass_ingreso:
+                st.session_state.vendedor_actual = user_ingreso
+                st.success(f"¡Bienvenido, {user_ingreso}!")
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos.")
+                
+    with tab2:
+        st.subheader("Crear Nuevo Vendedor")
+        nuevo_user = st.text_input("Nuevo Usuario (Nombre)")
+        nuevo_pass = st.text_input("Nueva Contraseña", type="password")
+        
+        if st.button("Registrar Vendedor"):
+            if nuevo_user and nuevo_pass:
+                if nuevo_user in st.session_state.usuarios:
+                    st.warning("Ese usuario ya existe.")
+                else:
+                    st.session_state.usuarios[nuevo_user] = nuevo_pass
+                    st.success(f"¡Vendedor '{nuevo_user}' registrado con éxito! Ya podés iniciar sesión.")
+            else:
+                st.error("Completá ambos campos.")
+                
+    st.stop() # Detiene la ejecución acá hasta que el usuario se loguee
+
+# --- APLICACIÓN PRINCIPAL (Una vez logueado) ---
+st.sidebar.write(f"👤 Conectado como: **{st.session_state.vendedor_actual}**")
+if st.sidebar.button("Cerrar Sesión"):
+    st.session_state.vendedor_actual = None
+    st.rerun()
+
+st.sidebar.divider()
+
+st.title("🧵 Control de Producción - Taller Textil")
 
 # --- MENÚ LATERAL: NUEVO PEDIDO ---
 st.sidebar.header("➕ Nuevo Pedido")
@@ -42,7 +92,10 @@ with st.sidebar.form("form_pedido", clear_on_submit=True):
     submitted = st.form_submit_button("Guardar Pedido")
     if submitted and cliente:
         nuevo_id = f"#{len(st.session_state.pedidos) + 1:03d}"
-        fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+        ahora = datetime.now()
+        fecha_str = ahora.strftime("%d/%m/%Y")
+        hora_str = ahora.strftime("%H:%M")
+        anio_str = ahora.strftime("%Y")
         
         nuevo_registro = pd.DataFrame([{
             "ID": nuevo_id,
@@ -52,7 +105,10 @@ with st.sidebar.form("form_pedido", clear_on_submit=True):
             "Cantidad": cantidad,
             "Diseno": diseno,
             "Estado": estados_posibles[0],
-            "Fecha": fecha_actual
+            "Vendedor": st.session_state.vendedor_actual,
+            "Fecha": fecha_str,
+            "Hora": hora_str,
+            "Anio": anio_str
         }])
         
         st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_registro], ignore_index=True)
@@ -78,7 +134,8 @@ else:
             
             with col1:
                 st.markdown(f"### **{row['ID']}**")
-                st.caption(row["Fecha"])
+                st.caption(f"📅 {row['Fecha']} - {row['Hora']} (Año {row['Anio']})")
+                st.caption(f" vendedor: *{row['Vendedor']}*")
                 
             with col2:
                 st.write(f"**Cliente:** {row['Cliente']}")
