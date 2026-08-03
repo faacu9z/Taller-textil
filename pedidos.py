@@ -1,17 +1,14 @@
 """
 ==========================================
-GESTIÓN DE PEDIDOS
+GESTIÓN DE PEDIDOS (Versión Simplificada)
 Gestión Taller Textil
 ==========================================
 
 Funciones:
-- Crear pedidos
-- Editar pedidos
-- Cambiar estados
-- Buscar pedidos
-- Manejar imágenes
-- Historial de producción
-- Control de pagos relacionado
+- Crear pedidos (Nombre, WhatsApp, Nro Archivo, Seña, Saldo)
+- Detalle de prendas (Nombre/Apodo, Talle, Número)
+- Gestión de imágenes y enlaces a WhatsApp
+- Cancelar / Eliminar pedidos
 """
 
 import sqlite3
@@ -20,26 +17,15 @@ from pathlib import Path
 from datetime import datetime
 
 from database import conectar
-
-from config import IMAGE_DIR, ESTADOS
+from config import IMAGE_DIR
 
 
 # ==========================================
-# GENERAR ID DE IMAGEN
+# GENERAR NOMBRE ÚNICO DE IMAGEN
 # ==========================================
 
-def generar_nombre_imagen(
-    extension
-):
-    """
-    Genera un nombre único
-    para guardar imágenes.
-    """
-
-    fecha = datetime.now().strftime(
-        "%Y%m%d%H%M%S%f"
-    )
-
+def generar_nombre_imagen(extension):
+    fecha = datetime.now().strftime("%Y%m%d%H%M%S%f")
     return f"{fecha}{extension}"
 
 
@@ -47,40 +33,20 @@ def generar_nombre_imagen(
 # GUARDAR IMAGEN DEL PEDIDO
 # ==========================================
 
-def guardar_imagen(
-    archivo
-):
+def guardar_imagen(archivo):
     """
-    Copia una imagen al servidor.
-
-    Acepta:
-    PNG
-    JPG
-    JPEG
-    WEBP
+    Copia una imagen al servidor y devuelve su nombre único.
     """
-
     if archivo is None:
         return None
 
-    extension = Path(
-        archivo.name
-    ).suffix.lower()
-
-    extensiones_validas = [
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".webp"
-    ]
+    extension = Path(archivo.name).suffix.lower()
+    extensiones_validas = [".png", ".jpg", ".jpeg", ".webp"]
 
     if extension not in extensiones_validas:
         return None
 
-    nombre = generar_nombre_imagen(
-        extension
-    )
-
+    nombre = generar_nombre_imagen(extension)
     destino = IMAGE_DIR / nombre
 
     with open(destino, "wb") as salida:
@@ -94,112 +60,134 @@ def guardar_imagen(
 # ==========================================
 
 def crear_pedido(
-    cliente_id,
-    prenda,
-    cantidad,
-    diseno="",
-    precio=0.0,
-    imagen=None,
-    prioridad="Normal"
+    nro_archivo,
+    cliente_nombre,
+    cliente_whatsapp,
+    tomado_por,
+    precio_total,
+    senia,
+    observaciones,
+    prendas,        # Lista de tuplas/diccionarios: [(nombre_apodo, talle, numero), ...]
+    imagenes        # Lista de rutas de archivos de imágenes seleccionadas
 ):
     """
-    Crea un nuevo pedido para un cliente.
-
-    Devuelve el ID del pedido creado,
-    o None si falló.
+    Crea un nuevo pedido con sus prendas y múltiples imágenes opcionales.
+    Calcula el saldo automáticamente (Precio Total - Seña).
     """
-
-    if not cliente_id or not prenda:
+    if not cliente_nombre or not cliente_whatsapp:
         return None
 
-    nombre_imagen = guardar_imagen(imagen) if imagen else None
+    saldo = precio_total - senia
+    fecha_creacion = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     conexion = conectar()
-
     cursor = conexion.cursor()
 
     try:
-
+        # 1. Insertar cabecera del pedido
         cursor.execute(
             """
             INSERT INTO pedidos
             (
-                cliente_id,
-                prenda,
-                cantidad,
-                diseno,
-                imagen,
-                fecha_creacion,
-                estado,
-                prioridad,
+                nro_archivo,
+                cliente_nombre,
+                cliente_whatsapp,
+                tomado_por,
                 precio_total,
-                total_pagado,
-                saldo
+                senia,
+                saldo,
+                observaciones,
+                estado,
+                fecha_creacion
             )
-            VALUES (?,?,?,?,?,?,?,?,?,0,?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Activo', ?)
             """,
             (
-                cliente_id,
-                prenda.strip(),
-                cantidad,
-                diseno.strip() if diseno else "",
-                nombre_imagen,
-                datetime.now().strftime(
-                    "%d/%m/%Y %H:%M"
-                ),
-                ESTADOS[0],
-                prioridad,
-                precio,
-                precio
+                nro_archivo.strip() if nro_archivo else "",
+                cliente_nombre.strip(),
+                cliente_whatsapp.strip(),
+                tomado_por.strip() if tomado_por else "",
+                precio_total,
+                senia,
+                saldo,
+                observaciones.strip() if observaciones else "",
+                fecha_creacion
             )
         )
 
+        pedido_id = cursor.lastrowid
+
+        # 2. Insertar detalle de prendas (Tabla de nombres, talles y números)
+        if prendas:
+            for p in prendas:
+                # p puede ser un diccionario o tupla (nombre_apodo, talle, numero)
+                cursor.execute(
+                    """
+                    INSERT INTO detalle_pedidos (pedido_id, nombre_apodo, talle, numero)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (pedido_id, p.get("nombre", ""), p.get("talle", ""), p.get("numero", ""))
+                )
+
+        # 3. Guardar e insertar imágenes asociadas
+        if imagenes:
+            for img in imagenes:
+                nombre_img = guardar_imagen(img)
+                if nombre_img:
+                    cursor.execute(
+                        """
+                        INSERT INTO imagenes_pedidos (pedido_id, ruta_imagen)
+                        VALUES (?, ?)
+                        """,
+                        (pedido_id, nombre_img)
+                    )
+
         conexion.commit()
+        return pedido_id
 
-        return cursor.lastrowid
-
-    except sqlite3.Error:
-
+    except sqlite3.Error as e:
+        print(f"Error al crear pedido: {e}")
         conexion.rollback()
-
         return None
 
     finally:
-
         conexion.close()
 
 
 # ==========================================
-# OBTENER PEDIDO
+# OBTENER PEDIDO COMPLETO
 # ==========================================
 
-def obtener_pedido(
-    id_pedido
-):
+def obtener_pedido(id_pedido):
     """
-    Devuelve un pedido completo
-    por su ID.
+    Devuelve un diccionario o Row con los datos principales,
+    más sus prendas e imágenes asociadas.
     """
-
     conexion = conectar()
-
     cursor = conexion.cursor()
 
     try:
+        cursor.execute("SELECT * FROM pedidos WHERE id = ?", (id_pedido,))
+        pedido = cursor.fetchone()
 
-        cursor.execute(
-            """
-            SELECT *
-            FROM pedidos
-            WHERE id=?
-            """,
-            (id_pedido,)
-        )
+        if not pedido:
+            return None
 
-        return cursor.fetchone()
+        # Obtener prendas
+        cursor.execute("SELECT * FROM detalle_pedidos WHERE pedido_id = ?", (id_pedido,))
+        prendas = cursor.fetchall()
+
+        # Obtener imágenes
+        cursor.execute("SELECT * FROM imagenes_pedidos WHERE pedido_id = ?", (id_pedido,))
+        imagenes = cursor.fetchall()
+
+        return {
+            "pedido": pedido,
+            "prendas": prendas,
+            "imagenes": imagenes
+        }
 
     finally:
-
         conexion.close()
 
 
@@ -207,29 +195,25 @@ def obtener_pedido(
 # LISTAR PEDIDOS
 # ==========================================
 
-def obtener_pedidos():
+def obtener_pedidos(estado="Activo"):
     """
-    Devuelve todos los pedidos.
+    Devuelve todos los pedidos filtrados por estado (por defecto 'Activo').
     """
-
     conexion = conectar()
-
     cursor = conexion.cursor()
 
     try:
-
         cursor.execute(
             """
-            SELECT *
-            FROM pedidos
+            SELECT * FROM pedidos
+            WHERE estado = ?
             ORDER BY id DESC
-            """
+            """,
+            (estado,)
         )
-
         return cursor.fetchall()
 
     finally:
-
         conexion.close()
 
 
@@ -237,539 +221,100 @@ def obtener_pedidos():
 # BUSCAR PEDIDOS
 # ==========================================
 
-def buscar_pedidos(
-    texto
-):
+def buscar_pedidos(texto, estado="Activo"):
     """
-    Busca pedidos por:
-
-    - Cliente
-    - Diseño
-    - Prenda
-    - Estado
+    Busca pedidos por Nombre, WhatsApp, Nro de Archivo u Observaciones.
     """
-
     conexion = conectar()
-
     cursor = conexion.cursor()
-
     busqueda = f"%{texto}%"
 
     try:
-
         cursor.execute(
             """
-            SELECT
-            pedidos.*
-            FROM pedidos
-            INNER JOIN clientes
-            ON pedidos.cliente_id = clientes.id
-            WHERE
-            clientes.nombre LIKE ?
-            OR pedidos.prenda LIKE ?
-            OR pedidos.diseno LIKE ?
-            OR pedidos.estado LIKE ?
-            ORDER BY pedidos.id DESC
-            """,
-            (
-                busqueda,
-                busqueda,
-                busqueda,
-                busqueda
+            SELECT * FROM pedidos
+            WHERE estado = ? AND (
+                cliente_nombre LIKE ? OR
+                cliente_whatsapp LIKE ? OR
+                nro_archivo LIKE ? OR
+                observaciones LIKE ?
             )
-        )
-
-        return cursor.fetchall()
-
-    finally:
-
-        conexion.close()
-
-
-# ==========================================
-# CAMBIAR ESTADO DEL PEDIDO
-# ==========================================
-
-def cambiar_estado(
-    id_pedido,
-    nuevo_estado,
-    usuario=""
-):
-    """
-    Cambia la etapa de producción de un pedido
-    y deja constancia en el historial.
-    """
-
-    conexion = conectar()
-
-    cursor = conexion.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            UPDATE pedidos
-            SET estado=?
-            WHERE id=?
-            """,
-            (
-                nuevo_estado,
-                id_pedido
-            )
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO historial
-            (
-                pedido_id,
-                accion,
-                detalle,
-                fecha,
-                usuario
-            )
-            VALUES (?,?,?,?,?)
-            """,
-            (
-                id_pedido,
-                "Cambio de estado",
-                f"Nuevo estado: {nuevo_estado}",
-                datetime.now().strftime(
-                    "%d/%m/%Y %H:%M"
-                ),
-                usuario
-            )
-        )
-
-        conexion.commit()
-
-        return True
-
-    except sqlite3.Error:
-
-        conexion.rollback()
-
-        return False
-
-    finally:
-
-        conexion.close()
-
-
-# ==========================================
-# ACTUALIZAR PRECIO DEL PEDIDO
-# ==========================================
-
-def actualizar_precio(
-    id_pedido,
-    nuevo_precio
-):
-    """
-    Actualiza el precio total
-    recalculando el saldo pendiente.
-    """
-
-    conexion = conectar()
-
-    cursor = conexion.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            SELECT total_pagado
-            FROM pedidos
-            WHERE id=?
-            """,
-            (id_pedido,)
-        )
-
-        pago = cursor.fetchone()
-
-        if pago is None:
-            return False
-
-        saldo = nuevo_precio - pago[0]
-
-        cursor.execute(
-            """
-            UPDATE pedidos
-            SET
-            precio_total=?,
-            saldo=?
-            WHERE id=?
-            """,
-            (
-                nuevo_precio,
-                saldo,
-                id_pedido
-            )
-        )
-
-        conexion.commit()
-
-        return True
-
-    finally:
-
-        conexion.close()
-
-
-# ==========================================
-# AGREGAR PAGO
-# ==========================================
-
-def agregar_pago(
-    id_pedido,
-    monto,
-    medio,
-    usuario=""
-):
-    """
-    Registra un pago
-    asociado al pedido.
-    """
-
-    conexion = conectar()
-
-    cursor = conexion.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            SELECT
-            precio_total,
-            total_pagado
-            FROM pedidos
-            WHERE id=?
-            """,
-            (id_pedido,)
-        )
-
-        pedido = cursor.fetchone()
-
-        if pedido is None:
-            return False
-
-        nuevo_total_pagado = pedido[1] + monto
-
-        nuevo_saldo = pedido[0] - nuevo_total_pagado
-
-        cursor.execute(
-            """
-            UPDATE pedidos
-            SET
-            total_pagado=?,
-            saldo=?
-            WHERE id=?
-            """,
-            (
-                nuevo_total_pagado,
-                nuevo_saldo,
-                id_pedido
-            )
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO pagos
-            (
-                pedido_id,
-                monto,
-                medio,
-                fecha,
-                usuario
-            )
-            VALUES (?,?,?,?,?)
-            """,
-            (
-                id_pedido,
-                monto,
-                medio,
-                datetime.now().strftime(
-                    "%d/%m/%Y %H:%M"
-                ),
-                usuario
-            )
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO historial
-            (
-                pedido_id,
-                accion,
-                detalle,
-                fecha,
-                usuario
-            )
-            VALUES (?,?,?,?,?)
-            """,
-            (
-                id_pedido,
-                "Pago registrado",
-                f"Pago de ${monto} por {medio}",
-                datetime.now().strftime(
-                    "%d/%m/%Y %H:%M"
-                ),
-                usuario
-            )
-        )
-
-        conexion.commit()
-
-        return True
-
-    except sqlite3.Error:
-
-        conexion.rollback()
-
-        return False
-
-    finally:
-
-        conexion.close()
-
-
-# ==========================================
-# ELIMINAR PEDIDO (SOFT DELETE)
-# ==========================================
-
-def eliminar_pedido(
-    id_pedido,
-    usuario=""
-):
-    """
-    No elimina físicamente el pedido.
-
-    Lo marca como eliminado para
-    conservar historial.
-    """
-
-    conexion = conectar()
-
-    cursor = conexion.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            UPDATE pedidos
-            SET estado=?
-            WHERE id=?
-            """,
-            (
-                "Cancelado",
-                id_pedido
-            )
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO historial
-            (
-                pedido_id,
-                accion,
-                detalle,
-                fecha,
-                usuario
-            )
-            VALUES (?,?,?,?,?)
-            """,
-            (
-                id_pedido,
-                "Pedido cancelado",
-                "Pedido enviado a papelera",
-                datetime.now().strftime(
-                    "%d/%m/%Y %H:%M"
-                ),
-                usuario
-            )
-        )
-
-        conexion.commit()
-
-        return True
-
-    except sqlite3.Error:
-
-        conexion.rollback()
-
-        return False
-
-    finally:
-
-        conexion.close()
-
-
-# ==========================================
-# RESTAURAR PEDIDO
-# ==========================================
-
-def restaurar_pedido(
-    id_pedido
-):
-    """
-    Recupera un pedido cancelado.
-    """
-
-    conexion = conectar()
-
-    cursor = conexion.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            UPDATE pedidos
-            SET estado=?
-            WHERE id=?
-            """,
-            (
-                ESTADOS[0],
-                id_pedido
-            )
-        )
-
-        conexion.commit()
-
-        return True
-
-    finally:
-
-        conexion.close()
-
-
-# ==========================================
-# PEDIDOS POR ESTADO
-# ==========================================
-
-def pedidos_por_estado(
-    estado
-):
-    """
-    Devuelve pedidos filtrados
-    por etapa de producción.
-    """
-
-    conexion = conectar()
-
-    cursor = conexion.cursor()
-
-    try:
-
-        cursor.execute(
-            """
-            SELECT *
-            FROM pedidos
-            WHERE estado=?
             ORDER BY id DESC
             """,
-            (estado,)
+            (estado, busqueda, busqueda, busqueda, busqueda)
         )
-
         return cursor.fetchall()
 
     finally:
-
         conexion.close()
 
 
 # ==========================================
-# PEDIDOS PENDIENTES DE ENTREGA
+# CAMBIAR ESTADO / CANCELAR / ELIMINAR
 # ==========================================
 
-def pedidos_pendientes():
+def cambiar_estado_pedido(id_pedido, nuevo_estado):
     """
-    Lista pedidos que todavía
-    no fueron entregados.
+    Cambia el estado del pedido (Ej: 'Activo', 'Cancelado', 'Entregado').
     """
-
     conexion = conectar()
-
     cursor = conexion.cursor()
 
     try:
-
         cursor.execute(
             """
-            SELECT *
-            FROM pedidos
-            WHERE estado != ?
-            ORDER BY id DESC
+            UPDATE pedidos
+            SET estado = ?
+            WHERE id = ?
             """,
-            (
-                "Entregado",
-            )
+            (nuevo_estado, id_pedido)
         )
+        conexion.commit()
+        return True
 
-        return cursor.fetchall()
+    except sqlite3.Error:
+        conexion.rollback()
+        return False
 
     finally:
-
         conexion.close()
 
 
-# ==========================================
-# ESTADISTICAS DE PRODUCCION
-# ==========================================
-
-def estadisticas_produccion():
+def eliminar_pedido_definitivo(id_pedido):
     """
-    Resumen general del taller.
+    Elimina físicamente el pedido y sus tablas relacionadas (Cascade).
     """
-
     conexion = conectar()
-
     cursor = conexion.cursor()
 
-    datos = {}
-
     try:
+        cursor.execute("DELETE FROM pedidos WHERE id = ?", (id_pedido,))
+        conexion.commit()
+        return True
 
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM pedidos
-            """
-        )
-
-        datos["total_pedidos"] = cursor.fetchone()[0]
-
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM pedidos
-            WHERE estado='Entregado'
-            """
-        )
-
-        datos["entregados"] = cursor.fetchone()[0]
-
-        cursor.execute(
-            """
-            SELECT COUNT(*)
-            FROM pedidos
-            WHERE estado!='Entregado'
-            """
-        )
-
-        datos["en_produccion"] = cursor.fetchone()[0]
-
-        cursor.execute(
-            """
-            SELECT SUM(cantidad)
-            FROM pedidos
-            """
-        )
-
-        cantidad = cursor.fetchone()[0]
-
-        datos["cantidad_prendas"] = cantidad or 0
-
-        return datos
+    except sqlite3.Error:
+        conexion.rollback()
+        return False
 
     finally:
-
         conexion.close()
+
+
+# ==========================================
+# ENLACE DIRECTO WHATSAPP
+# ==========================================
+
+def generar_link_whatsapp(telefono, mensaje=""):
+    """
+    Genera una URL limpia para abrir WhatsApp Web o App Directo con el número del cliente.
+    """
+    # Limpiar caracteres que no sean números
+    tel_limpio = "".join(filter(str.isdigit, str(telefono)))
+    
+    # URL base de WhatsApp API
+    url = f"https://wa.me/{tel_limpio}"
+    if mensaje:
+        import urllib.parse
+        url += f"?text={urllib.parse.quote(mensaje)}"
+        
+    return url
