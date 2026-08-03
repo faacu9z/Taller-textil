@@ -199,7 +199,7 @@ if st.session_state.pedido_seleccionado is not None:
     
     with col_t1:
         st.markdown("#### 📏 Tabla (Nombre, Talle, Número)")
-        talles_actuales = row['TablaTalles'] if isinstance(row['TablaTalles'], list) else [{"Nombre": "", "Talle": "", "Número": ""}]
+        talles_actuales = row['TablaTalles'] if isinstance(row['TablaTalles'], list) and len(row['TablaTalles']) > 0 else [{"Nombre": "", "Talle": "", "Número": ""}]
         df_talles_input = pd.DataFrame(talles_actuales)
         
         df_editado = st.data_editor(
@@ -210,8 +210,9 @@ if st.session_state.pedido_seleccionado is not None:
         )
         
         if st.button("Guardar Cambios de Talles", key=f"btn_guardar_talles_{idx}"):
-            # Solución definitiva usando objetos Series nativos para evitar el conflicto del indexador de Pandas
-            st.session_state.pedidos.loc[idx, "TablaTalles"] = [df_editado.to_dict(orient="records")]
+            # Corrección robusta utilizando objetos nativos de la serie para evitar choques de dimensiones en Pandas
+            datos_nuevos = df_editado.to_dict(orient="records")
+            st.session_state.pedidos.at[idx, "TablaTalles"] = datos_nuevos
             guardar_en_disco()
             st.success("¡Talles guardados con éxito!")
             st.rerun()
@@ -221,7 +222,7 @@ if st.session_state.pedido_seleccionado is not None:
         obs_actual = row['Observaciones'] if pd.notnull(row['Observaciones']) else ""
         nuevas_obs = st.text_area("Notas o detalles adicionales del pedido", value=obs_actual, key=f"obs_{idx}")
         if nuevas_obs != obs_actual:
-            st.session_state.pedidos.loc[idx, "Observaciones"] = nuevas_obs
+            st.session_state.pedidos.at[idx, "Observaciones"] = nuevas_obs
             guardar_en_disco()
 
     with col_t2:
@@ -231,7 +232,7 @@ if st.session_state.pedido_seleccionado is not None:
         if img_actual and isinstance(img_actual, str) and os.path.exists(img_actual):
             st.image(img_actual, caption="Imagen guardada", use_column_width=True)
             if st.button("Eliminar imagen actual", key=f"del_img_{idx}"):
-                st.session_state.pedidos.loc[idx, "Imagen"] = None
+                st.session_state.pedidos.at[idx, "Imagen"] = None
                 guardar_en_disco()
                 st.rerun()
         else:
@@ -241,7 +242,7 @@ if st.session_state.pedido_seleccionado is not None:
                 nombre_img = f"pedido_{row['ID_Base']}_{int(datetime.utcnow().timestamp())}.png"
                 ruta_img = CARPETA_IMGS / nombre_img
                 img.save(ruta_img)
-                st.session_state.pedidos.loc[idx, "Imagen"] = str(ruta_img)
+                st.session_state.pedidos.at[idx, "Imagen"] = str(ruta_img)
                 guardar_en_disco()
                 st.success("¡Imagen guardada!")
                 st.rerun()
