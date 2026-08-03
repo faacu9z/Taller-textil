@@ -23,7 +23,7 @@ VERSION = "2.0"
 
 CONFIG_FILE = "config.ini"
 
-config = configparser.ConfigParser()
+config = configparser.ConfigParser(interpolation=None)
 
 # ==========================================
 # SI NO EXISTE EL CONFIG.INI LO CREA
@@ -84,21 +84,13 @@ TEMP_DIR = BASE_DIR / "Temp"
 ICON_DIR = BASE_DIR / "Iconos"
 
 for carpeta in [
-
     IMAGE_DIR,
-
     EXPORT_DIR,
-
     BACKUP_DIR,
-
     LOG_DIR,
-
     TEMP_DIR,
-
     ICON_DIR
-
 ]:
-
     carpeta.mkdir(parents=True, exist_ok=True)
 
 # ==========================================
@@ -122,54 +114,45 @@ MONEDA = config["GENERAL"]["Moneda"]
 # ==========================================
 
 ESTADOS = [
-
     "Ingresado",
-
     "Diseño",
-
     "Esperando aprobación",
-
     "Impresión",
-
     "Plancha",
-
     "Costura",
-
     "Control de calidad",
-
     "Listo",
-
     "Entregado",
-
     "Cancelado"
-
 ]
 
 # ==========================================
 
 PRIORIDADES = [
-
     "Normal",
-
     "Alta",
-
     "Urgente"
-
 ]
 
 # ==========================================
 
 MEDIOS_PAGO = [
-
     "Efectivo",
-
     "Transferencia",
-
     "QR",
-
     "Tarjeta"
-
 ]
+"""
+==========================================
+BASE DE DATOS
+Gestión Taller Textil
+==========================================
+
+Funciones:
+- Conectar a SQLite
+- Crear tablas si no existen
+"""
+
 import sqlite3
 
 from config import DATABASE
@@ -177,7 +160,15 @@ from config import MODO_WAL
 from config import BUSY_TIMEOUT
 
 
+# ==========================================
+# CONECTAR
+# ==========================================
+
 def conectar():
+    """
+    Abre una conexión a la base de datos
+    con las opciones de configuración definidas.
+    """
 
     conexion = sqlite3.connect(
         DATABASE,
@@ -189,7 +180,6 @@ def conectar():
     cursor = conexion.cursor()
 
     if MODO_WAL:
-
         cursor.execute("PRAGMA journal_mode=WAL")
 
     cursor.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT}")
@@ -197,6 +187,110 @@ def conectar():
     cursor.execute("PRAGMA foreign_keys=ON")
 
     return conexion
+
+
+# ==========================================
+# CREAR TABLAS (SI NO EXISTEN)
+# ==========================================
+#
+# NOTA: esta función no existía en el proyecto
+# original que se recuperó (no había ningún
+# CREATE TABLE en ningún archivo), por lo que
+# el esquema de abajo se construyó a partir de
+# cómo se usan las columnas en el resto del
+# código (auth.py, clientes.py, pedidos.py,
+# finanzas.py, reportes.py). Revisar que las
+# columnas coincidan con lo que necesitás.
+#
+# ==========================================
+
+def inicializar_base():
+    """
+    Crea todas las tablas necesarias
+    si todavía no existen.
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    cursor.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            fecha_creacion TEXT,
+            activo INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS clientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            telefono TEXT,
+            direccion TEXT,
+            observaciones TEXT,
+            fecha_creacion TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS pedidos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER NOT NULL,
+            prenda TEXT,
+            cantidad INTEGER NOT NULL DEFAULT 1,
+            diseno TEXT,
+            imagen TEXT,
+            fecha_creacion TEXT,
+            estado TEXT NOT NULL DEFAULT 'Ingresado',
+            prioridad TEXT NOT NULL DEFAULT 'Normal',
+            precio_total REAL NOT NULL DEFAULT 0,
+            total_pagado REAL NOT NULL DEFAULT 0,
+            saldo REAL NOT NULL DEFAULT 0,
+            FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS pagos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pedido_id INTEGER NOT NULL,
+            monto REAL NOT NULL,
+            medio TEXT,
+            fecha TEXT,
+            usuario TEXT,
+            FOREIGN KEY (pedido_id) REFERENCES pedidos(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS gastos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            concepto TEXT,
+            categoria TEXT,
+            cantidad REAL NOT NULL DEFAULT 1,
+            precio_unitario REAL NOT NULL DEFAULT 0,
+            total REAL NOT NULL DEFAULT 0,
+            fecha TEXT,
+            usuario TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS historial (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pedido_id INTEGER NOT NULL,
+            accion TEXT,
+            detalle TEXT,
+            fecha TEXT,
+            usuario TEXT,
+            FOREIGN KEY (pedido_id) REFERENCES pedidos(id)
+        );
+        """
+    )
+
+    conexion.commit()
+
+    conexion.close()
+
+
+# Se ejecuta al importar el módulo para garantizar
+# que las tablas existan antes de que cualquier otro
+# módulo intente usarlas.
+inicializar_base()
 """
 ==========================================
 AUTENTICACIÓN
@@ -209,6 +303,7 @@ Funciones:
 - Login
 - Cambiar contraseña
 - Obtener usuarios
+- Activar / desactivar usuarios
 - Eliminar usuarios
 """
 
@@ -267,12 +362,11 @@ def crear_admin():
                 (
                     usuario,
                     password,
-                    fecha_creacion
+                    fecha_creacion,
+                    activo
                 )
-
-                VALUES (?,?,?)
+                VALUES (?,?,?,1)
                 """,
-
                 (
                     "admin",
                     hash_password("1234"),
@@ -288,7 +382,6 @@ def crear_admin():
 
         return False
 
-
     except sqlite3.Error as error:
 
         print(
@@ -297,11 +390,9 @@ def crear_admin():
 
         return False
 
-
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -326,7 +417,6 @@ def existe_usuario(usuario: str) -> bool:
             FROM usuarios
             WHERE usuario=?
             """,
-
             (usuario,)
         )
 
@@ -334,11 +424,9 @@ def existe_usuario(usuario: str) -> bool:
 
         return resultado is not None
 
-
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -354,44 +442,95 @@ def registrar_usuario(
     """
 
     if not usuario or not password:
-
         return False, "Complete todos los campos"
 
+    usuario = usuario.strip()
+
+    if existe_usuario(usuario):
+        return False, "Ese usuario ya existe"
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO usuarios
             (
-                usuario.strip(),
-
+                usuario,
+                password,
+                fecha_creacion,
+                activo
+            )
+            VALUES (?,?,?,1)
+            """,
+            (
+                usuario,
                 hash_password(password),
-
                 datetime.now().strftime(
                     "%d/%m/%Y %H:%M"
                 )
-
             )
-
         )
-
 
         conexion.commit()
 
-
         return True, "Usuario creado correctamente"
 
-
-
-    except Exception as error:
-
+    except sqlite3.Error as error:
 
         conexion.rollback()
 
-
         return False, str(error)
-
-
 
     finally:
 
         conexion.close()
 
+
+# ==========================================
+# LOGIN
+# ==========================================
+
+def login(usuario: str, password: str):
+    """
+    Verifica usuario y contraseña.
+
+    Devuelve la fila del usuario si las
+    credenciales son correctas y la cuenta
+    está activa, o None en caso contrario.
+    """
+
+    if not usuario or not password:
+        return None
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM usuarios
+            WHERE usuario=?
+            AND password=?
+            AND activo=1
+            """,
+            (
+                usuario.strip(),
+                hash_password(password)
+            )
+        )
+
+        return cursor.fetchone()
+
+    finally:
+
+        conexion.close()
 
 
 # ==========================================
@@ -412,23 +551,17 @@ def obtener_usuario(id_usuario):
         cursor.execute(
             """
             SELECT *
-
             FROM usuarios
-
             WHERE id=?
-
             """,
-
             (id_usuario,)
         )
 
         return cursor.fetchone()
 
-
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -449,21 +582,16 @@ def obtener_usuarios():
         cursor.execute(
             """
             SELECT *
-
             FROM usuarios
-
             ORDER BY usuario ASC
-
             """
         )
 
         return cursor.fetchall()
 
-
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -479,61 +607,116 @@ def cambiar_password(
     """
 
     if not nueva_password:
-
         return False
-
 
     conexion = conectar()
 
     cursor = conexion.cursor()
-
 
     try:
 
         cursor.execute(
             """
             UPDATE usuarios
-
             SET password=?
-
             WHERE id=?
-
             """,
-
             (
                 hash_password(
                     nueva_password
                 ),
-
                 id_usuario
             )
         )
 
-
         conexion.commit()
 
-
         return True
-
-
 
     except sqlite3.Error:
 
         return False
-
-
 
     finally:
 
         conexion.close()
 
 
-
 # ==========================================
 # ACTIVAR / DESACTIVAR USUARIO
 # ==========================================
 
-def cambiar_estado
+def cambiar_estado(id_usuario, activo: bool):
+    """
+    Activa o desactiva un usuario
+    (los usuarios inactivos no pueden loguearse).
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            UPDATE usuarios
+            SET activo=?
+            WHERE id=?
+            """,
+            (
+                1 if activo else 0,
+                id_usuario
+            )
+        )
+
+        conexion.commit()
+
+        return True
+
+    except sqlite3.Error:
+
+        return False
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
+# ELIMINAR USUARIO
+# ==========================================
+
+def eliminar_usuario(id_usuario):
+    """
+    Elimina un usuario definitivamente.
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            DELETE FROM usuarios
+            WHERE id=?
+            """,
+            (id_usuario,)
+        )
+
+        conexion.commit()
+
+        return True
+
+    except sqlite3.Error:
+
+        return False
+
+    finally:
+
+        conexion.close()
 """
 ==========================================
 GESTIÓN DE CLIENTES
@@ -555,7 +738,6 @@ from datetime import datetime
 from database import conectar
 
 
-
 # ==========================================
 # NORMALIZAR TELEFONO
 # ==========================================
@@ -573,7 +755,6 @@ def normalizar_telefono(telefono: str) -> str:
         filtro for filtro in telefono
         if filtro.isdigit()
     )
-
 
 
 # ==========================================
@@ -600,7 +781,6 @@ def formatear_telefono(telefono: str) -> str:
         )
 
     return telefono
-
 
 
 # ==========================================
@@ -634,13 +814,9 @@ def existe_cliente(
             cursor.execute(
                 """
                 SELECT id
-
                 FROM clientes
-
                 WHERE telefono=?
-
                 """,
-
                 (telefono,)
             )
 
@@ -649,15 +825,149 @@ def existe_cliente(
             cursor.execute(
                 """
                 SELECT id
-
                 FROM clientes
-
                 WHERE LOWER(nombre)=LOWER(?)
-
                 """,
+                (nombre.strip(),)
+            )
 
-                (
-                    # ==========================================
+        return cursor.fetchone() is not None
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
+# CREAR CLIENTE
+# ==========================================
+
+def crear_cliente(
+    nombre,
+    telefono="",
+    direccion="",
+    observaciones=""
+):
+    """
+    Registra un nuevo cliente.
+
+    Devuelve (True, id_nuevo_cliente) si se
+    creó correctamente, o (False, mensaje de
+    error) en caso contrario.
+    """
+
+    if not nombre or not nombre.strip():
+        return False, "El nombre es obligatorio"
+
+    if existe_cliente(nombre, telefono):
+        return False, "Ya existe un cliente con ese nombre o teléfono"
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO clientes
+            (
+                nombre,
+                telefono,
+                direccion,
+                observaciones,
+                fecha_creacion
+            )
+            VALUES (?,?,?,?,?)
+            """,
+            (
+                nombre.strip(),
+                normalizar_telefono(telefono),
+                direccion.strip() if direccion else "",
+                observaciones.strip() if observaciones else "",
+                datetime.now().strftime(
+                    "%d/%m/%Y %H:%M"
+                )
+            )
+        )
+
+        conexion.commit()
+
+        return True, cursor.lastrowid
+
+    except sqlite3.Error as error:
+
+        conexion.rollback()
+
+        return False, str(error)
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
+# OBTENER TODOS LOS CLIENTES
+# ==========================================
+
+def obtener_clientes():
+    """
+    Devuelve todos los clientes registrados.
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM clientes
+            ORDER BY nombre ASC
+            """
+        )
+
+        return cursor.fetchall()
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
+# OBTENER UN CLIENTE POR ID
+# ==========================================
+
+def obtener_cliente(id_cliente):
+    """
+    Devuelve la información de un cliente.
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM clientes
+            WHERE id=?
+            """,
+            (id_cliente,)
+        )
+
+        return cursor.fetchone()
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
 # BUSCAR CLIENTES
 # ==========================================
 
@@ -674,41 +984,28 @@ def buscar_clientes(texto):
 
     busqueda = f"%{texto.strip()}%"
 
-
     try:
 
         cursor.execute(
             """
             SELECT *
-
             FROM clientes
-
             WHERE
-
             nombre LIKE ?
-
             OR telefono LIKE ?
-
             ORDER BY nombre ASC
-
             """,
-
             (
                 busqueda,
-
                 busqueda
             )
         )
 
-
         return cursor.fetchall()
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -730,62 +1027,40 @@ def editar_cliente(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             UPDATE clientes
-
             SET
-
                 nombre=?,
-
                 telefono=?,
-
                 direccion=?,
-
                 observaciones=?
-
             WHERE id=?
-
             """,
-
             (
-
                 nombre.strip(),
-
                 normalizar_telefono(
                     telefono
                 ),
-
                 direccion.strip(),
-
                 observaciones.strip(),
-
                 id_cliente
-
             )
         )
 
-
         conexion.commit()
 
-
         return True
-
-
 
     except sqlite3.Error:
 
         return False
 
-
-
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -798,8 +1073,55 @@ def eliminar_cliente(
     """
     Elimina un cliente.
 
-    Recomend
-    # ==========================================
+    Recomendado usar solo si el cliente
+    no tiene pedidos asociados, para no
+    perder el historial de ventas.
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM pedidos
+            WHERE cliente_id=?
+            """,
+            (id_cliente,)
+        )
+
+        tiene_pedidos = cursor.fetchone()[0]
+
+        if tiene_pedidos:
+            return False
+
+        cursor.execute(
+            """
+            DELETE FROM clientes
+            WHERE id=?
+            """,
+            (id_cliente,)
+        )
+
+        conexion.commit()
+
+        return True
+
+    except sqlite3.Error:
+
+        conexion.rollback()
+
+        return False
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
 # SALDO PENDIENTE DEL CLIENTE
 # ==========================================
 
@@ -815,39 +1137,27 @@ def saldo_pendiente(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             SELECT SUM(saldo)
-
             FROM pedidos
-
             WHERE cliente_id=?
-
             """,
-
             (id_cliente,)
         )
 
-
         resultado = cursor.fetchone()
 
-
         if resultado[0]:
-
             return resultado[0]
 
-
         return 0
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -855,7 +1165,36 @@ def saldo_pendiente(
 # ==========================================
 
 def ultimo_pedido(
+    id_cliente
+):
     """
+    Devuelve el último pedido
+    realizado por el cliente.
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM pedidos
+            WHERE cliente_id=?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (id_cliente,)
+        )
+
+        return cursor.fetchone()
+
+    finally:
+
+        conexion.close()
+"""
 ==========================================
 GESTIÓN DE PEDIDOS
 Gestión Taller Textil
@@ -881,7 +1220,6 @@ from database import conectar
 from config import IMAGE_DIR, ESTADOS
 
 
-
 # ==========================================
 # GENERAR ID DE IMAGEN
 # ==========================================
@@ -899,7 +1237,6 @@ def generar_nombre_imagen(
     )
 
     return f"{fecha}{extension}"
-
 
 
 # ==========================================
@@ -920,43 +1257,115 @@ def guardar_imagen(
     """
 
     if archivo is None:
-
         return None
-
-
 
     extension = Path(
         archivo.name
     ).suffix.lower()
 
-
-
     extensiones_validas = [
-
         ".png",
-
         ".jpg",
-
         ".jpeg",
-
         ".webp"
-
     ]
 
-
     if extension not in extensiones_validas:
-
         return None
-
-
 
     nombre = generar_nombre_imagen(
         extension
     )
 
-
     destino = IMAGE_DIR / nombre
-    # ==========================================
+
+    with open(destino, "wb") as salida:
+        shutil.copyfileobj(archivo, salida)
+
+    return nombre
+
+
+# ==========================================
+# CREAR PEDIDO
+# ==========================================
+
+def crear_pedido(
+    cliente_id,
+    prenda,
+    cantidad,
+    diseno="",
+    precio=0.0,
+    imagen=None,
+    prioridad="Normal"
+):
+    """
+    Crea un nuevo pedido para un cliente.
+
+    Devuelve el ID del pedido creado,
+    o None si falló.
+    """
+
+    if not cliente_id or not prenda:
+        return None
+
+    nombre_imagen = guardar_imagen(imagen) if imagen else None
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO pedidos
+            (
+                cliente_id,
+                prenda,
+                cantidad,
+                diseno,
+                imagen,
+                fecha_creacion,
+                estado,
+                prioridad,
+                precio_total,
+                total_pagado,
+                saldo
+            )
+            VALUES (?,?,?,?,?,?,?,?,?,0,?)
+            """,
+            (
+                cliente_id,
+                prenda.strip(),
+                cantidad,
+                diseno.strip() if diseno else "",
+                nombre_imagen,
+                datetime.now().strftime(
+                    "%d/%m/%Y %H:%M"
+                ),
+                ESTADOS[0],
+                prioridad,
+                precio,
+                precio
+            )
+        )
+
+        conexion.commit()
+
+        return cursor.lastrowid
+
+    except sqlite3.Error:
+
+        conexion.rollback()
+
+        return None
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
 # OBTENER PEDIDO
 # ==========================================
 
@@ -972,31 +1381,22 @@ def obtener_pedido(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             SELECT *
-
             FROM pedidos
-
             WHERE id=?
-
             """,
-
             (id_pedido,)
         )
 
-
         return cursor.fetchone()
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -1012,29 +1412,21 @@ def obtener_pedidos():
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             SELECT *
-
             FROM pedidos
-
             ORDER BY id DESC
-
             """
         )
 
-
         return cursor.fetchall()
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -1057,25 +1449,110 @@ def buscar_pedidos(
 
     cursor = conexion.cursor()
 
-
     busqueda = f"%{texto}%"
-
-
 
     try:
 
         cursor.execute(
             """
             SELECT
-
             pedidos.*
-
             FROM pedidos
-
             INNER JOIN clientes
+            ON pedidos.cliente_id = clientes.id
+            WHERE
+            clientes.nombre LIKE ?
+            OR pedidos.prenda LIKE ?
+            OR pedidos.diseno LIKE ?
+            OR pedidos.estado LIKE ?
+            ORDER BY pedidos.id DESC
+            """,
+            (
+                busqueda,
+                busqueda,
+                busqueda,
+                busqueda
+            )
+        )
 
-            ON
-            # ==========================================
+        return cursor.fetchall()
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
+# CAMBIAR ESTADO DEL PEDIDO
+# ==========================================
+
+def cambiar_estado(
+    id_pedido,
+    nuevo_estado,
+    usuario=""
+):
+    """
+    Cambia la etapa de producción de un pedido
+    y deja constancia en el historial.
+    """
+
+    conexion = conectar()
+
+    cursor = conexion.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            UPDATE pedidos
+            SET estado=?
+            WHERE id=?
+            """,
+            (
+                nuevo_estado,
+                id_pedido
+            )
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO historial
+            (
+                pedido_id,
+                accion,
+                detalle,
+                fecha,
+                usuario
+            )
+            VALUES (?,?,?,?,?)
+            """,
+            (
+                id_pedido,
+                "Cambio de estado",
+                f"Nuevo estado: {nuevo_estado}",
+                datetime.now().strftime(
+                    "%d/%m/%Y %H:%M"
+                ),
+                usuario
+            )
+        )
+
+        conexion.commit()
+
+        return True
+
+    except sqlite3.Error:
+
+        conexion.rollback()
+
+        return False
+
+    finally:
+
+        conexion.close()
+
+
+# ==========================================
 # ACTUALIZAR PRECIO DEL PEDIDO
 # ==========================================
 
@@ -1092,75 +1569,46 @@ def actualizar_precio(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             SELECT total_pagado
-
             FROM pedidos
-
             WHERE id=?
-
             """,
-
             (id_pedido,)
         )
 
-
         pago = cursor.fetchone()
 
-
         if pago is None:
-
             return False
 
-
-
         saldo = nuevo_precio - pago[0]
-
-
 
         cursor.execute(
             """
             UPDATE pedidos
-
             SET
-
             precio_total=?,
-
             saldo=?
-
-
             WHERE id=?
-
-
             """,
-
             (
-
                 nuevo_precio,
-
                 saldo,
-
                 id_pedido
-
             )
         )
 
-
         conexion.commit()
 
-
         return True
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -1182,41 +1630,105 @@ def agregar_pago(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             SELECT
-
             precio_total,
-
             total_pagado
-
-
             FROM pedidos
-
             WHERE id=?
-
-
             """,
-
             (id_pedido,)
         )
 
-
         pedido = cursor.fetchone()
 
-
         if pedido is None:
-
             return False
 
+        nuevo_total_pagado = pedido[1] + monto
+
+        nuevo_saldo = pedido[0] - nuevo_total_pagado
+
+        cursor.execute(
+            """
+            UPDATE pedidos
+            SET
+            total_pagado=?,
+            saldo=?
+            WHERE id=?
+            """,
+            (
+                nuevo_total_pagado,
+                nuevo_saldo,
+                id_pedido
+            )
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO pagos
+            (
+                pedido_id,
+                monto,
+                medio,
+                fecha,
+                usuario
+            )
+            VALUES (?,?,?,?,?)
+            """,
+            (
+                id_pedido,
+                monto,
+                medio,
+                datetime.now().strftime(
+                    "%d/%m/%Y %H:%M"
+                ),
+                usuario
+            )
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO historial
+            (
+                pedido_id,
+                accion,
+                detalle,
+                fecha,
+                usuario
+            )
+            VALUES (?,?,?,?,?)
+            """,
+            (
+                id_pedido,
+                "Pago registrado",
+                f"Pago de ${monto} por {medio}",
+                datetime.now().strftime(
+                    "%d/%m/%Y %H:%M"
+                ),
+                usuario
+            )
+        )
+
+        conexion.commit()
+
+        return True
+
+    except sqlite3.Error:
+
+        conexion.rollback()
+
+        return False
+
+    finally:
+
+        conexion.close()
 
 
-        nuevo_total = (
-            pedido[1
-            # ==========================================
+# ==========================================
 # ELIMINAR PEDIDO (SOFT DELETE)
 # ==========================================
 
@@ -1235,90 +1747,56 @@ def eliminar_pedido(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             UPDATE pedidos
-
             SET estado=?
-
             WHERE id=?
-
             """,
-
             (
                 "Cancelado",
-
                 id_pedido
-
             )
         )
-
-
 
         cursor.execute(
             """
             INSERT INTO historial
-
             (
-
-            pedido_id,
-
-            accion,
-
-            detalle,
-
-            fecha,
-
-            usuario
-
+                pedido_id,
+                accion,
+                detalle,
+                fecha,
+                usuario
             )
-
             VALUES (?,?,?,?,?)
-
             """,
-
             (
-
                 id_pedido,
-
                 "Pedido cancelado",
-
                 "Pedido enviado a papelera",
-
                 datetime.now().strftime(
                     "%d/%m/%Y %H:%M"
                 ),
-
                 usuario
-
             )
         )
 
-
         conexion.commit()
-
 
         return True
 
-
-
     except sqlite3.Error:
-
 
         conexion.rollback()
 
-
         return False
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -1336,40 +1814,27 @@ def restaurar_pedido(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             UPDATE pedidos
-
             SET estado=?
-
             WHERE id=?
-
             """,
-
             (
-
                 ESTADOS[0],
-
                 id_pedido
-
             )
         )
 
-
         conexion.commit()
 
-
         return True
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -1388,33 +1853,23 @@ def pedidos_por_estado(
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             SELECT *
-
             FROM pedidos
-
             WHERE estado=?
-
             ORDER BY id DESC
-
             """,
-
             (estado,)
         )
 
-
         return cursor.fetchall()
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -1431,36 +1886,25 @@ def pedidos_pendientes():
 
     cursor = conexion.cursor()
 
-
     try:
 
         cursor.execute(
             """
             SELECT *
-
             FROM pedidos
-
             WHERE estado != ?
-
             ORDER BY id DESC
-
             """,
-
             (
                 "Entregado",
-
             )
         )
 
-
         return cursor.fetchall()
-
-
 
     finally:
 
         conexion.close()
-
 
 
 # ==========================================
@@ -1476,83 +1920,56 @@ def estadisticas_produccion():
 
     cursor = conexion.cursor()
 
-
     datos = {}
-
 
     try:
 
         cursor.execute(
             """
             SELECT COUNT(*)
-
             FROM pedidos
-
             """
         )
-
 
         datos["total_pedidos"] = cursor.fetchone()[0]
 
-
-
         cursor.execute(
             """
             SELECT COUNT(*)
-
             FROM pedidos
-
             WHERE estado='Entregado'
-
             """
         )
-
 
         datos["entregados"] = cursor.fetchone()[0]
 
-
-
         cursor.execute(
             """
             SELECT COUNT(*)
-
             FROM pedidos
-
             WHERE estado!='Entregado'
-
             """
         )
 
-
         datos["en_produccion"] = cursor.fetchone()[0]
-
-
 
         cursor.execute(
             """
             SELECT SUM(cantidad)
-
             FROM pedidos
-
             """
         )
 
-
         cantidad = cursor.fetchone()[0]
-
 
         datos["cantidad_prendas"] = cantidad or 0
 
-
-
         return datos
-
-
 
     finally:
 
         conexion.close()
-        """
+"""
 ==========================================
 FINANZAS
 Gestión Taller Textil
@@ -1565,6 +1982,7 @@ Funciones:
 - Balance general
 - Estadísticas financieras
 """
+
 
 import sqlite3
 from datetime import datetime
@@ -2308,7 +2726,7 @@ def datos_reporte_financiero():
     finally:
 
         conexion.close()
-        """
+"""
 ==========================================
 DASHBOARD
 Gestión Taller Textil
@@ -2320,6 +2738,7 @@ Funciones:
 - Estado de producción
 - Resumen financiero
 """
+
 
 import streamlit as st
 
@@ -2604,7 +3023,7 @@ def dashboard_completo():
     st.divider()
 
     mostrar_tabla_produccion()
-    """
+"""
 ==========================================
 REPORTES
 Gestión Taller Textil
@@ -2616,6 +3035,7 @@ Funciones:
 - Exportar Excel
 - Exportar PDF
 """
+
 
 import pandas as pd
 from datetime import datetime
@@ -3283,7 +3703,7 @@ def ventas_por_mes():
     finally:
 
         conexion.close()
-        """
+"""
 ==========================================
 APP PRINCIPAL
 Gestión Taller Textil
@@ -3296,8 +3716,11 @@ streamlit run app.py
 ==========================================
 """
 
+
 import streamlit as st
 import pandas as pd
+
+from config import ESTADOS, PRIORIDADES
 
 
 from auth import (
@@ -3779,19 +4202,10 @@ elif menu == "Pedidos":
 
                     "Cambiar estado",
 
-                    [
+                    ESTADOS,
 
-                        "Ingreso",
-
-                        "Diseño",
-
-                        "Producción",
-
-                        "Control",
-
-                        "Entregado"
-
-                    ],
+                    index=ESTADOS.index(pedido[7])
+                    if pedido[7] in ESTADOS else 0,
 
                     key=f"estado_{pedido[0]}"
 
@@ -3941,6 +4355,12 @@ elif menu == "Pedidos":
             )
 
 
+            prioridad = st.selectbox(
+                "Prioridad",
+                PRIORIDADES
+            )
+
+
             guardar = st.form_submit_button(
 
                 "Crear pedido"
@@ -3962,7 +4382,9 @@ elif menu == "Pedidos":
 
                     diseno,
 
-                    precio
+                    precio,
+
+                    prioridad=prioridad
 
                 )
 
