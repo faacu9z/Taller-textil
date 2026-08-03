@@ -1,320 +1,318 @@
 import streamlit as st
-import sqlite3
-from datetime import datetime
-import urllib.parse
+import pandas as pd
+from datetime import datetime, timedelta
+import os
+from pathlib import Path
 
-DB_NAME = "database.db"
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
 
-# ==========================================
-# 1. CONFIGURACIÓN Y BASE DE DATOS
-# ==========================================
-def conectar():
-    return sqlite3.connect(DB_NAME, check_same_thread=False)
+# --- RUTA DE GUARDADO LOCAL AUTOMÁTICA ---
+CARPETA_DATOS = Path.home() / "TallerTextilData"
+CARPETA_DATOS.mkdir(parents=True, exist_ok=True)
+ARCH_EXCEL = CARPETA_DATOS / "base_datos_taller.xlsx"
 
-def inicializar_base_datos():
-    conexion = conectar()
-    cursor = conexion.cursor()
-    
-    # Tabla principal de pedidos (incluye quién lo tomó)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS pedidos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nombre_cliente TEXT NOT NULL,
-            telefono_cliente TEXT NOT NULL,
-            vendedor TEXT NOT NULL,
-            fecha TEXT NOT NULL,
-            estado TEXT NOT NULL, -- 'Activo' o 'Entregado'
-            senia REAL DEFAULT 0,
-            saldo REAL DEFAULT 0,
-            total REAL DEFAULT 0
-        )
-    """)
-    
-    # Tabla de detalles (múltiples talles, prendas y cantidades por pedido)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS detalle_pedidos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pedido_id INTEGER,
-            prenda TEXT NOT NULL,
-            talle TEXT NOT NULL,
-            cantidad INTEGER NOT NULL,
-            precio_unitario REAL NOT NULL,
-            FOREIGN KEY (pedido_id) REFERENCES pedidos (id) ON DELETE CASCADE
-        )
-    """)
+# --- FUNCIONES DE PERSISTENCIA LOCAL (EXCEL) ---
+def cargar_datos_iniciales():
+    if "usuarios" not in st.session_state:
+        st.session_state.usuarios = {"admin": "1234"}
 
-    # Tabla de gastos del taller
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS gastos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            concepto TEXT NOT NULL,
-            categoria TEXT NOT NULL,
-            cantidad INTEGER,
-            precio_unitario REAL,
-            total REAL NOT NULL,
-            fecha TEXT NOT NULL,
-            registrado_por TEXT
-        )
-    """)
-    conexion.commit()
-    conexion.close()
+    # Cargar Pedidos
+    if "pedidos" not in st.session_state:
+        if ARCH_EXCEL.exists():
+            try:
+                df_p = pd.read_excel(ARCH_EXCEL, sheet_name="Pedidos")
+                if "Historial_Pagos" in df_p.columns:
+                    df_p["Historial_Pagos"] = df_p["Historial_Pagos"].apply(lambda x: eval(x) if pd.notnull(x) and x != "" else [])
+                st.session_state.pedidos = df_p
+            except:
+                st.session_state.pedidos = pd.DataFrame(columns=[
+                    "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+                    "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+                    "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+                ])
+        else:
+            st.session_state.pedidos = pd.DataFrame(columns=[
+                "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+                "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+                "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+            ])
 
-inicializar_base_datos()
+    # Cargar Gastos
+    if "gastos" not in st.session_state:
+        if ARCH_EXCEL.exists():
+            try:
+                st.session_state.gastos = pd.read_excel(ARCH_EXCEL, sheet_name="Gastos")
+            except:
+                st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
+        else:
+            st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
 
-# Configuración visual de Streamlit
-st.set_page_config(page_title="Gestión Taller Textil", page_icon="🧵", layout="wide")
-
-# ==========================================
-# 2. BARRA LATERAL Y AUTENTICACIÓN RÁPIDA
-# ==========================================
-st.sidebar.title("🧵 Taller Textil")
-st.sidebar.markdown("---")
-
-# Control de quién está operando el sistema
-if "usuario_actual" not in st.session_state:
-    st.session_state.usuario_actual = "Facundo"
-
-st.sidebar.markdown("👤 **Usuario Actual:**")
-usuario_input = st.sidebar.text_input("Quién sos?", value=st.session_state.usuario_actual, label_visibility="collapsed")
-if usuario_input:
-    st.session_state.usuario_actual = usuario_input
-
-st.sidebar.markdown("---")
-menu = st.sidebar.radio("Navegación", ["Panel Principal", "Nuevo Pedido", "Ver Pedidos", "Finanzas"])
-
-# ==========================================
-# 3. LÓGICA DE FINANZAS (CONSULTAS)
-# ==========================================
-def obtener_resumen_financiero():
-    conexion = conectar()
-    cursor = conexion.cursor()
-    
-    # Ingresos (suma de señas)
-    cursor.execute("SELECT SUM(senia) FROM pedidos")
-    ingresos = cursor.fetchone()[0] or 0.0
-    
-    # Saldo pendiente de cobro
-    cursor.execute("SELECT SUM(saldo) FROM pedidos WHERE estado = 'Activo'")
-    pendiente = cursor.fetchone()[0] or 0.0
-    
-    # Gastos totales
-    cursor.execute("SELECT SUM(total) FROM gastos")
-    gastos = cursor.fetchone()[0] or 0.0
-    
-    conexion.close()
-    return {"ingresos": ingresos, "gastos": gastos, "balance": ingresos - gastos, "pendiente": pendiente}
-
-# ==========================================
-# 4. PANTALLAS DE LA APLICACIÓN
-# ==========================================
-
-if menu == "Panel Principal":
-    st.title("🧵 Panel de Control")
-    st.write(f"Bienvenido de nuevo, **{st.session_state.usuario_actual}**. Este es el estado actual del taller:")
-    
-    resumen = obtener_resumen_financiero()
-    
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ingresos (Señas)", f"${resumen['ingresos']:,.0f}")
-    c2.metric("Gastos Totales", f"${resumen['gastos']:,.0f}")
-    c3.metric("Balance Real", f"${resumen['balance']:,.0f}")
-    c4.metric("Saldo a Cobrar", f"${resumen['pendiente']:,.0f}")
-    
-    st.divider()
-    st.info("💡 Usá el menú lateral para cargar nuevos pedidos con múltiples talles y cantidades, o revisar el historial.")
-
-elif menu == "Nuevo Pedido":
-    st.title("📝 Registrar Nuevo Pedido")
-    st.caption(f"Pedido tomado por: **{st.session_state.usuario_actual}**")
-    
-    with st.form("form_pedido", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            nombre_cliente = st.text_input("Nombre del Cliente*")
-        with col2:
-            telefono_cliente = st.text_input("WhatsApp / Teléfono* (ej: 3704...)")
+def guardar_en_disco():
+    try:
+        with pd.ExcelWriter(ARCH_EXCEL, engine="openpyxl") as writer:
+            df_p_guardar = st.session_state.pedidos.copy()
+            if "Historial_Pagos" in df_p_guardar.columns:
+                df_p_guardar["Historial_Pagos"] = df_p_guardar["Historial_Pagos"].astype(str)
             
-        st.divider()
-        st.markdown("### 👕 Detalle de Prendas y Talles")
-        
-        if "items_pedido" not in st.session_state:
-            st.session_state.items_pedido = [{"prenda": "Remera", "talle": "L", "cantidad": 1, "precio": 0.0}]
+            df_p_guardar.to_excel(writer, sheet_name="Pedidos", index=False)
+            st.session_state.gastos.to_excel(writer, sheet_name="Gastos", index=False)
+    except ModuleNotFoundError:
+        pass
 
-        # Gestión dinámica de filas de talles
-        for i, item in enumerate(st.session_state.items_pedido):
-            cc1, cc2, cc3, cc4 = st.columns([2, 1, 1, 1])
-            with cc1:
-                st.session_state.items_pedido[i]["prenda"] = st.text_input(f"Prenda {i+1}", value=item["prenda"], key=f"pr_{i}")
-            with cc2:
-                st.session_state.items_pedido[i]["talle"] = st.text_input(f"Talle {i+1}", value=item["talle"], key=f"ta_{i}")
-            with cc3:
-                st.session_state.items_pedido[i]["cantidad"] = st.number_input(f"Cant {i+1}", min_value=1, value=item["cantidad"], key=f"ca_{i}")
-            with cc4:
-                st.session_state.items_pedido[i]["precio"] = st.number_input(f"Precio U. {i+1}", min_value=0.0, value=item["precio"], step=100.0, key=f"pu_{i}")
+cargar_datos_iniciales()
 
-        col_btn1, col_btn2 = st.columns(2)
-        if col_btn1.form_submit_button("➕ Agregar otro talle/prenda"):
-            st.session_state.items_pedido.append({"prenda": "Remera", "talle": "M", "cantidad": 1, "precio": 0.0})
-            st.rerun()
+# --- ESTILOS VISUALES ---
+st.markdown("""
+    <style>
+    .main { background-color: #FAFAFA; }
+    .stButton>button { width: 100%; border-radius: 6px; font-weight: 500; }
+    .card-pedido { background: white; padding: 15px 20px; border-radius: 10px; border: 1px solid #EAEAEA; margin-bottom: 12px; }
+    .metric-card { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; text-align: center; }
+    .col-bloque { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; height: 100%; }
+    </style>
+""", unsafe_allow_html=True)
 
-        st.divider()
-        senia_abonada = st.number_input("Seña Abonada ($)", min_value=0.0, step=100.0)
-        
-        guardar = st.form_submit_button("Guardar Pedido Definitivo 💾", use_container_width=True)
-        
-        if guardar:
-            if not nombre_cliente.strip() or not telefono_cliente.strip():
-                st.error("Completá el nombre y teléfono del cliente.")
-            else:
-                total_global = sum(it["cantidad"] * it["precio"] for it in st.session_state.items_pedido)
-                saldo_restante = total_global - senia_abonada
-                fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
-                
-                conexion = conectar()
-                cursor = conexion.cursor()
-                try:
-                    cursor.execute(
-                        """
-                        INSERT INTO pedidos (nombre_cliente, telefono_cliente, vendedor, fecha, estado, senia, saldo, total)
-                        VALUES (?, ?, ?, ?, 'Activo', ?, ?, ?)
-                        """,
-                        (nombre_cliente.strip(), telefono_cliente.strip(), st.session_state.usuario_actual, fecha_actual, senia_abonada, saldo_restante, total_global)
-                    )
-                    pedido_id = cursor.lastrowid
-                    
-                    for it in st.session_state.items_pedido:
-                        cursor.execute(
-                            """
-                            INSERT INTO detalle_pedidos (pedido_id, prenda, talle, cantidad, precio_unitario)
-                            VALUES (?, ?, ?, ?, ?)
-                            """,
-                            (pedido_id, it["prenda"], it["talle"], it["cantidad"], it["precio"])
-                        )
-                        
-                    conexion.commit()
-                    st.success("¡Pedido guardado con éxito!")
-                    st.session_state.items_pedido = [{"prenda": "Remera", "talle": "L", "cantidad": 1, "precio": 0.0}]
+# --- INICIALIZACIÓN DE VARIABLES DE NAVEGACIÓN ---
+if "vendedor_actual" not in st.session_state: st.session_state.vendedor_actual = None
+if "pedido_seleccionado" not in st.session_state: st.session_state.pedido_seleccionado = None
+
+estados_posibles = ["1. Ingreso de pedido", "2. Diseño y confirmación de cliente", "3. En plancha", "4. En costura", "5. Control de calidad", "6. Entregado"]
+tipos_prenda = ["camiseta sola", "camiseta + short", "sudadera", "sudadera + short", "chomba deportiva", "conjunto de invierno", "short", "pechera", "bandera", "gorra", "campera"]
+medios_pago = ["Efectivo", "Transferencia", "Tarjeta", "QR"]
+
+# --- LOGIN ---
+if st.session_state.vendedor_actual is None:
+    col_l1, col_l2, col_l3 = st.columns([1, 1.5, 1])
+    with col_l2:
+        st.markdown("<h2 style='text-align: center;'>🧵 Taller Textil</h2>", unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrar Vendedor"])
+        with tab1:
+            user_ingreso = st.text_input("Usuario")
+            pass_ingreso = st.text_input("Contraseña", type="password")
+            if st.button("Entrar", type="primary"):
+                if user_ingreso in st.session_state.usuarios and st.session_state.usuarios[user_ingreso] == pass_ingreso:
+                    st.session_state.vendedor_actual = user_ingreso
                     st.rerun()
-                except Exception as e:
-                    conexion.rollback()
-                    st.error(f"Error al guardar en base de datos: {e}")
-                finally:
-                    conexion.close()
+                else:
+                    st.error("Datos incorrectos.")
+        with tab2:
+            nuevo_user = st.text_input("Nuevo Usuario", key="reg_user")
+            nuevo_pass = st.text_input("Nueva Contraseña", type="password", key="reg_pass")
+            if st.button("Registrar"):
+                if nuevo_user and nuevo_pass:
+                    if nuevo_user in st.session_state.usuarios: st.warning("El usuario ya existe.")
+                    else:
+                        st.session_state.usuarios[nuevo_user] = nuevo_pass
+                        st.success("¡Registrado con éxito!")
+    st.stop()
 
-elif menu == "Ver Pedidos":
-    st.title("📦 Gestión y Estado de Pedidos")
+# --- VISTA DETALLADA DEL PEDIDO ---
+if st.session_state.pedido_seleccionado is not None:
+    idx = st.session_state.pedido_seleccionado
+    if idx not in st.session_state.pedidos.index:
+        st.session_state.pedido_seleccionado = None
+        st.rerun()
+        
+    row = st.session_state.pedidos.loc[idx]
     
-    conexion = conectar()
-    cursor = conexion.cursor()
-    cursor.execute("SELECT id, nombre_cliente, telefono_cliente, vendedor, fecha, estado, senia, saldo, total FROM pedidos ORDER BY id DESC")
-    pedidos = cursor.fetchall()
-    conexion.close()
-    
-    if not pedidos:
-        st.info("No hay pedidos registrados.")
-    else:
-        for p in pedidos:
-            p_id, cliente, tel, vendedor, fecha, estado, senia, saldo, total = p
-            
-            # Buscar talles de este pedido
-            conexion = conectar()
-            cursor = conexion.cursor()
-            cursor.execute("SELECT prenda, talle, cantidad, precio_unitario FROM detalle_pedidos WHERE pedido_id = ?", (p_id,))
-            detalles = cursor.fetchall()
-            conexion.close()
-            
-            with st.expander(f"Pedido #{p_id} — {cliente} ({estado}) | Tomado por: {vendedor}"):
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.write(f"📅 **Fecha:** {fecha}")
-                    st.write(f"📱 **Celular:** {tel}")
-                    st.write(f"👤 **Vendedor:** {vendedor}")
-                with c2:
-                    st.write(f"💵 **Seña:** ${senia:,.0f}")
-                    st.write(f"⏳ **Saldo:** ${saldo:,.0f}")
-                    st.write(f"🏷️ **Total:** ${total:,.0f}")
-                
-                st.markdown("---")
-                st.markdown("**Desglose de Talles y Prendas:**")
-                for det in detalles:
-                    prenda, talle, cant, precio_u = det
-                    st.text(f"• {cant}x {prenda} (Talle: {talle}) — Unitario: ${precio_u:,.0f}")
+    col_v1, col_v2, col_v3 = st.columns([2, 5, 2])
+    with col_v1:
+        if st.button("← Volver a la lista"):
+            st.session_state.pedido_seleccionado = None
+            st.rerun()
+    with col_v3:
+        with st.popover("🗑️ Eliminar Pedido"):
+            st.error("¿Estás seguro de que quieres eliminar este pedido?")
+            if st.button("Sí, Confirmar Eliminación", type="primary", key="del_ped"):
+                st.session_state.pedidos = st.session_state.pedidos.drop(idx)
+                guardar_en_disco()
+                st.session_state.pedido_seleccionado = None
+                st.rerun()
 
-                # Botones de acción (WhatsApp, Entregar, Eliminar)
-                b1, b2, b3 = st.columns(3)
-                with b1:
-                    texto_wa = f"Hola {cliente}! Te escribimos del taller textil por tu pedido #{p_id}. El total es ${total:,.0f}, abonaste ${senia:,.0f} y te queda un saldo de ${saldo:,.0f}."
-                    link_wa = f"https://wa.me/549{tel.replace(' ', '')}?text={urllib_parse.quote(texto_wa)}"
-                    st.markdown(f"[💬 Enviar WhatsApp]({link_wa})", unsafe_allow_html=True)
-                
-                with b2:
-                    if estado == "Activo":
-                        if st.button(f"Marcar Entregado #{p_id}", key=f"ent_{p_id}"):
-                            conexion = conectar()
-                            cursor = conexion.cursor()
-                            cursor.execute("UPDATE pedidos SET estado = 'Entregado', saldo = 0 WHERE id = ?", (p_id,))
-                            conexion.commit()
-                            conexion.close()
-                            st.success("¡Marcado como entregado!")
-                            st.rerun()
-                with b3:
-                    if st.button(f"Eliminar #{p_id}", key=f"del_{p_id}"):
-                        conexion = conectar()
-                        cursor = conexion.cursor()
-                        cursor.execute("DELETE FROM pedidos WHERE id = ?", (p_id,))
-                        conexion.commit()
-                        conexion.close()
-                        st.warning("Pedido eliminado.")
+    st.markdown(f"## 📂 Detalle del Pedido: #{row['ID_Base']:03d}")
+    
+    col_izq, col_der = st.columns([1, 1.3])
+    with col_izq:
+        st.markdown("<div class='col-bloque'>", unsafe_allow_html=True)
+        st.markdown("### 📋 Datos Generales")
+        
+        num_wsp = ''.join(filter(str.isdigit, str(row['Telefono'])))
+        link_wsp = f"https://wa.me/{num_wsp}" if num_wsp else "#"
+        st.markdown(f"**👤 Cliente:** {row['Cliente']} | **📲 WhatsApp:** <a href='{link_wsp}' target='_blank'>{row['Telefono']} (Enviar msj)</a>", unsafe_allow_html=True)
+        
+        st.write(f"**🤝 Vendedor:** {row['Vendedor']} | **📅 Ingreso:** {row['Fecha']}")
+        st.write(f"**📁 Archivo en PC:** {row['ArchivoPC']}")
+        st.divider()
+        st.write(f"**👕 Prenda:** {row['Prenda']} (x{row['Cantidad']})")
+        st.write(f"**🎨 Diseño:** {row['Diseno']}")
+        st.divider()
+        nuevo_est_det = st.selectbox("📌 Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]))
+        if nuevo_est_det != row["Estado"]:
+            st.session_state.pedidos.at[idx, "Estado"] = nuevo_est_det
+            guardar_en_disco()
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col_der:
+        st.markdown("<div class='col-bloque'>", unsafe_allow_html=True)
+        st.markdown("### 💰 Finanzas y Pagos")
+        c_m1, c_m2, c_m3 = st.columns(3)
+        c_m1.metric("Precio Acordado", f"${row['Precio_Total']:,.0f}")
+        c_m2.metric("Abonado", f"${row['Total_Pagado']:,.0f}")
+        c_m3.metric("Falta Pagar", f"${row['Saldo']:,.0f}")
+
+        if isinstance(row['Historial_Pagos'], list) and len(row['Historial_Pagos']) > 0:
+            df_historial = pd.DataFrame(row['Historial_Pagos']).drop(columns=["Fecha_Obj"], errors="ignore")
+            st.dataframe(df_historial, use_container_width=True, hide_index=True)
+            
+        if row['Saldo'] > 0:
+            with st.expander("➕ Pagar Saldo"):
+                with st.form(f"form_pago_{idx}"):
+                    monto_a_pagar = st.number_input("Monto ($)", min_value=0.0, max_value=float(row['Saldo']), value=float(row['Saldo']))
+                    medio_pago_saldo = st.selectbox("Medio de Pago", medios_pago)
+                    if st.form_submit_button("Confirmar"):
+                        ahora = datetime.utcnow() - timedelta(hours=3)
+                        nuevo_pago = {"Fecha_Obj": ahora, "Fecha": ahora.strftime("%d/%m/%Y"), "Hora": ahora.strftime("%H:%M"), "Vendedor": st.session_state.vendedor_actual, "Concepto": "Pago de Saldo", "Monto": monto_a_pagar, "Medio": medio_pago_saldo}
+                        historial_actual = row['Historial_Pagos'] if isinstance(row['Historial_Pagos'], list) else []
+                        historial_actual.append(nuevo_pago)
+                        st.session_state.pedidos.at[idx, "Historial_Pagos"] = historial_actual
+                        st.session_state.pedidos.at[idx, "Total_Pagado"] = row['Total_Pagado'] + monto_a_pagar
+                        st.session_state.pedidos.at[idx, "Saldo"] = row['Precio_Total'] - (row['Total_Pagado'] + monto_a_pagar)
+                        guardar_en_disco()
                         st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()
 
-elif menu == "Finanzas":
-    st.title("💰 Finanzas y Gastos del Taller")
+# --- BARRA SUPERIOR ---
+col_top1, col_top2 = st.columns([6, 1])
+with col_top1: st.title("🧵 Gestión de Producción (Local)")
+with col_top2:
+    st.write(f"👤 **{st.session_state.vendedor_actual}**")
+    if st.button("Salir"):
+        st.session_state.vendedor_actual = None
+        st.rerun()
+
+tab_nuevo, tab_lista, tab_finanzas = st.tabs(["➕ Nuevo Pedido", "📋 Pedidos en Curso", "📊 Finanzas y Stock"])
+
+# --- PESTAÑA 1: NUEVO PEDIDO ---
+with tab_nuevo:
+    with st.form("form_nuevo_pedido", clear_on_submit=True):
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            cliente = st.text_input("Nombre del Cliente")
+            telefono = st.text_input("WhatsApp (Ej: 549112345678)")
+            prenda = st.selectbox("Tipo de Prenda", tipos_prenda)
+            precio_tot = st.number_input("Precio Total ($)", min_value=0.0, step=1000.0)
+        with col_f2:
+            cantidad = st.number_input("Cantidad", min_value=1, value=10)
+            diseno = st.text_input("Diseño")
+            archivo_pc = st.text_input("Nº / Nombre de Archivo en PC", value="S/N")
+            sena = st.number_input("Seña Inicial ($)", min_value=0.0, step=1000.0)
+            mp_sena = st.selectbox("Medio de Pago (Seña)", medios_pago)
+
+        if st.form_submit_button("Guardar Pedido", type="primary") and cliente:
+            ahora = datetime.utcnow() - timedelta(hours=3)
+            historial_inicial = [{"Fecha_Obj": ahora, "Fecha": ahora.strftime("%d/%m/%Y"), "Hora": ahora.strftime("%H:%M"), "Vendedor": st.session_state.vendedor_actual, "Concepto": "Seña", "Monto": sena, "Medio": mp_sena}] if sena > 0 else []
+            
+            nuevo_df = pd.DataFrame([{
+                "ID_Base": len(st.session_state.pedidos) + 1, "Cliente": cliente, "Telefono": telefono, "Prenda": prenda, "Cantidad": cantidad,
+                "Diseno": diseno, "ArchivoPC": archivo_pc, "TablaTalles": str([{"Nombre": "", "Talle": "", "Número": "", "Short": False}]),
+                "Observaciones": "", "Imagen": None, "Estado": estados_posibles[0], "Vendedor": st.session_state.vendedor_actual,
+                "Fecha_Obj": ahora, "Fecha": ahora.strftime("%d/%m/%Y"), "Hora": ahora.strftime("%H:%M"), "Anio": ahora.strftime("%Y"),
+                "Precio_Total": precio_tot, "Sena": sena, "Total_Pagado": sena, "Saldo": precio_tot - sena, "Historial_Pagos": historial_inicial
+            }])
+            
+            if st.session_state.pedidos.empty:
+                st.session_state.pedidos = nuevo_df
+            else:
+                st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_df], ignore_index=True)
+            
+            guardar_en_disco()
+            st.success("¡Pedido guardado con éxito!")
+
+# --- PESTAÑA 2: LISTA DE PEDIDOS (CON BUSCADOR) ---
+with tab_lista:
+    busqueda = st.text_input("🔍 Buscar pedido (Nombre, Prenda, Archivo o ID)")
     
-    resumen = obtener_resumen_financiero()
+    df_mostrar = st.session_state.pedidos
+    if not df_mostrar.empty and busqueda:
+        busqueda = busqueda.lower()
+        mask = (
+            df_mostrar["Cliente"].astype(str).str.lower().str.contains(busqueda) |
+            df_mostrar["Prenda"].astype(str).str.lower().str.contains(busqueda) |
+            df_mostrar["ArchivoPC"].astype(str).str.lower().str.contains(busqueda) |
+            df_mostrar["ID_Base"].astype(str).str.contains(busqueda)
+        )
+        df_mostrar = df_mostrar[mask]
+
+    if df_mostrar.empty:
+        st.info("No hay pedidos.")
+    else:
+        for idx, row in df_mostrar.sort_values(by="Fecha_Obj", ascending=False).iterrows():
+            with st.container():
+                st.markdown('<div class="card-pedido">', unsafe_allow_html=True)
+                c1, c2, c3, c4 = st.columns([1.5, 3, 2, 2.5])
+                with c1:
+                    if st.button(f"📄 #{row['ID_Base']:03d}", key=f"btn_p_{idx}"):
+                        st.session_state.pedido_seleccionado = idx
+                        st.rerun()
+                with c2: st.write(f"**{row['Cliente']}** - {row['Prenda']}")
+                with c3: st.write(f"*{row['Estado']}*")
+                with c4: st.markdown(f"${row['Total_Pagado']:,.0f} <br> ${row['Saldo']:,.0f}", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+# --- PESTAÑA 3: FINANZAS Y STOCK ---
+with tab_finanzas:
+    st.markdown("### 📊 Control de Finanzas y Stock")
     
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Ingresos por Señas", f"${resumen['ingresos']:,.0f}")
-    c2.metric("Gastos Totales", f"${resumen['gastos']:,.0f}")
-    c3.metric("Balance Neto", f"${resumen['balance']:,.0f}")
+    total_ingresos = st.session_state.pedidos["Total_Pagado"].sum() if not st.session_state.pedidos.empty else 0.0
+    total_gastos = st.session_state.gastos["Total"].sum() if not st.session_state.gastos.empty else 0.0
+    balance_neto = total_ingresos - total_gastos
+
+    c_f1, c_f2, c_f3 = st.columns(3)
+    c_f1.metric("💵 Total Ingresado", f"${total_ingresos:,.0f}")
+    c_f2.metric("🛒 Total Gastado", f"${total_gastos:,.0f}")
+    c_f3.metric("📈 Balance Neto", f"${balance_neto:,.0f}", delta=f"${balance_neto:,.0f}")
     
     st.divider()
-    st.markdown("### Registrar Nuevo Gasto")
-    with st.form("form_gasto", clear_on_submit=True):
-        concepto = st.text_input("Concepto (ej: Compra de Telas, Tintas, Service)")
-        categoria = st.selectbox("Categoría", ["Materia Prima", "Insumos", "Herramientas", "Servicios", "Otros"])
-        cant = st.number_input("Cantidad", min_value=1, value=1)
-        precio_u = st.number_input("Precio Unitario ($)", min_value=0.0, step=100.0)
-        
-        if st.form_submit_button("Guardar Gasto"):
-            if concepto.strip():
-                total_gasto = cant * precio_u
-                fecha_gasto = datetime.now().strftime("%d/%m/%Y %H:%M")
-                
-                conexion = conectar()
-                cursor = conexion.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO gastos (concepto, categoria, cantidad, precio_unitario, total, fecha, registrado_por)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (concepto.strip(), categoria, cant, precio_u, total_gasto, fecha_gasto, st.session_state.usuario_actual)
-                )
-                conexion.commit()
-                conexion.close()
-                st.success("Gasto registrado correctamente.")
-                st.rerun()
-            else:
-                st.error("Escribí un concepto válido.")
 
-    st.markdown("### Historial de Gastos")
-    conexion = conectar()
-    cursor = conexion.cursor()
-    cursor.execute("SELECT concepto, categoria, cantidad, total, fecha, registrado_por FROM gastos ORDER BY id DESC")
-    gastos = cursor.fetchall()
-    conexion.close()
-    
-    if gastos:
-        for g in gastos:
-            st.text(f"• [{g[4]}] {g[0]} ({g[1]}) — Cant: {g[2]} — Total: ${g[3]:,.0f} (Registrado por: {g[5]})")
-    else:
-        st.info("No hay gastos registrados.")
+    col_g1, col_g2 = st.columns([1, 2])
+    with col_g1:
+        st.markdown("#### 🛒 Registrar Gasto")
+        with st.form("form_gastos", clear_on_submit=True):
+            item = st.text_input("Insumo / Producto")
+            cant_gasto = st.number_input("Cantidad", min_value=1, value=1)
+            precio_uni = st.number_input("Costo Unitario ($)", min_value=0.0, step=1000.0)
+            if st.form_submit_button("Guardar Gasto") and item:
+                hoy = datetime.utcnow() - timedelta(hours=3)
+                n_gasto = pd.DataFrame([{"Fecha_Obj": hoy, "Fecha": hoy.strftime("%d/%m/%Y"), "Item": item, "Cantidad": cant_gasto, "Precio_Unitario": precio_uni, "Total": cant_gasto * precio_uni}])
+                
+                if st.session_state.gastos.empty:
+                    st.session_state.gastos = n_gasto
+                else:
+                    st.session_state.gastos = pd.concat([st.session_state.gastos, n_gasto], ignore_index=True)
+                
+                guardar_en_disco()
+                st.rerun()
+                
+    with col_g2:
+        st.markdown("#### 📋 Historial de Compras")
+        if st.session_state.gastos.empty:
+            st.info("No hay gastos registrados.")
+        else:
+            for idx_g, row_g in st.session_state.gastos.sort_values(by="Fecha_Obj", ascending=False).iterrows():
+                with st.container():
+                    st.markdown("<div style='background:#fff; padding:10px; border-radius:5px; border:1px solid #ddd; margin-bottom:5px;'>", unsafe_allow_html=True)
+                    col_det1, col_det2, col_det3, col_det4 = st.columns([2, 4, 2, 1])
+                    col_det1.write(f"📅 {row_g['Fecha']}")
+                    col_det2.write(f"🛒 {row_g['Item']} (x{row_g['Cantidad']})")
+                    col_det3.write(f"**${row_g['Total']:,.0f}**")
+                    with col_det4:
+                        with st.popover("🗑️"):
+                            st.write("¿Eliminar este gasto?")
+                            if st.button("Sí", key=f"del_g_{idx_g}"):
+                                st.session_state.gastos = st.session_state.gastos.drop(idx_g)
+                                guardar_en_disco()
+                                st.rerun()
+                    st.markdown("</div>", unsafe_allow_html=True)
