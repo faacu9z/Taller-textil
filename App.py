@@ -265,3 +265,476 @@ def crear_base():
     conn.commit()
 
     conn.close()
+import hashlib
+from datetime import datetime
+
+from database import conectar
+
+
+# ==========================================
+# ENCRIPTAR CONTRASEÑA
+# ==========================================
+
+def hash_password(password: str):
+
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+# ==========================================
+# CREAR ADMINISTRADOR
+# ==========================================
+
+def crear_admin():
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        "SELECT * FROM usuarios WHERE usuario=?",
+
+        ("admin",)
+
+    )
+
+    existe = cursor.fetchone()
+
+    if existe is None:
+
+        cursor.execute(
+
+            """
+
+            INSERT INTO usuarios
+
+            (usuario,password,fecha_creacion)
+
+            VALUES (?,?,?)
+
+            """,
+
+            (
+
+                "admin",
+
+                hash_password("1234"),
+
+                datetime.now().strftime("%d/%m/%Y %H:%M")
+
+            )
+
+        )
+
+        conn.commit()
+
+    conn.close()
+
+
+# ==========================================
+# REGISTRAR USUARIO
+# ==========================================
+
+def registrar_usuario(usuario,password):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+
+            """
+
+            INSERT INTO usuarios
+
+            (usuario,password,fecha_creacion)
+
+            VALUES (?,?,?)
+
+            """,
+
+            (
+
+                usuario,
+
+                hash_password(password),
+
+                datetime.now().strftime("%d/%m/%Y %H:%M")
+
+            )
+
+        )
+
+        conn.commit()
+
+        return True
+
+    except:
+
+        return False
+
+    finally:
+
+        conn.close()
+
+
+# ==========================================
+# LOGIN
+# ==========================================
+
+def login(usuario,password):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        """
+
+        SELECT *
+
+        FROM usuarios
+
+        WHERE usuario=?
+
+        AND password=?
+
+        """,
+
+        (
+
+            usuario,
+
+            hash_password(password)
+
+        )
+
+    )
+
+    datos = cursor.fetchone()
+
+    conn.close()
+
+    return datos
+
+
+# ==========================================
+# OBTENER USUARIOS
+# ==========================================
+
+def obtener_usuarios():
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        """
+
+        SELECT *
+
+        FROM usuarios
+
+        ORDER BY usuario
+
+        """
+
+    )
+
+    datos = cursor.fetchall()
+
+    conn.close()
+
+    return datos
+
+
+# ==========================================
+# ELIMINAR USUARIO
+# ==========================================
+
+def eliminar_usuario(id_usuario):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        "DELETE FROM usuarios WHERE id=?",
+
+        (id_usuario,)
+
+    )
+
+    conn.commit()
+
+    conn.close()
+    from datetime import datetime
+
+from database import conectar
+
+
+# ==========================================
+# CREAR CLIENTE
+# ==========================================
+
+def crear_cliente(
+
+    nombre,
+
+    telefono="",
+
+    direccion="",
+
+    observaciones=""
+
+):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        """
+
+        INSERT INTO clientes
+
+        (
+
+        nombre,
+
+        telefono,
+
+        direccion,
+
+        observaciones,
+
+        fecha_alta
+
+        )
+
+        VALUES
+
+        (?,?,?,?,?)
+
+        """,
+
+        (
+
+            nombre,
+
+            telefono,
+
+            direccion,
+
+            observaciones,
+
+            datetime.now().strftime("%d/%m/%Y")
+
+        )
+
+    )
+
+    conn.commit()
+
+    conn.close()
+
+
+# ==========================================
+# BUSCAR CLIENTE
+# ==========================================
+
+def buscar_cliente(texto):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        """
+
+        SELECT *
+
+        FROM clientes
+
+        WHERE
+
+        nombre LIKE ?
+
+        OR telefono LIKE ?
+
+        ORDER BY nombre
+
+        """,
+
+        (
+
+            f"%{texto}%",
+
+            f"%{texto}%"
+
+        )
+
+    )
+
+    datos = cursor.fetchall()
+
+    conn.close()
+
+    return datos
+
+
+# ==========================================
+# TODOS LOS CLIENTES
+# ==========================================
+
+def obtener_clientes():
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        """
+
+        SELECT *
+
+        FROM clientes
+
+        ORDER BY nombre
+
+        """
+
+    )
+
+    datos = cursor.fetchall()
+
+    conn.close()
+
+    return datos
+
+
+# ==========================================
+# OBTENER CLIENTE
+# ==========================================
+
+def obtener_cliente(id_cliente):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        """
+
+        SELECT *
+
+        FROM clientes
+
+        WHERE id=?
+
+        """,
+
+        (id_cliente,)
+
+    )
+
+    dato = cursor.fetchone()
+
+    conn.close()
+
+    return dato
+
+
+# ==========================================
+# EDITAR CLIENTE
+# ==========================================
+
+def editar_cliente(
+
+    id_cliente,
+
+    nombre,
+
+    telefono,
+
+    direccion,
+
+    observaciones
+
+):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        """
+
+        UPDATE clientes
+
+        SET
+
+        nombre=?,
+
+        telefono=?,
+
+        direccion=?,
+
+        observaciones=?
+
+        WHERE id=?
+
+        """,
+
+        (
+
+            nombre,
+
+            telefono,
+
+            direccion,
+
+            observaciones,
+
+            id_cliente
+
+        )
+
+    )
+
+    conn.commit()
+
+    conn.close()
+
+
+# ==========================================
+# ELIMINAR CLIENTE
+# ==========================================
+
+def eliminar_cliente(id_cliente):
+
+    conn = conectar()
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+
+        "DELETE FROM clientes WHERE id=?",
+
+        (id_cliente,)
+
+    )
+
+    conn.commit()
+
+    conn.close()
