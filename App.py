@@ -16,7 +16,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE DATOS ---
+# --- INICIALIZACIÓN DE DATOS GLOBALES EN SESSION_STATE ---
 if "usuarios" not in st.session_state:
     st.session_state.usuarios = {"admin": "1234"}
 
@@ -50,9 +50,9 @@ if st.session_state.vendedor_actual is None:
         tab1, tab2 = st.tabs(["Iniciar Sesión", "Registrar Vendedor"])
         
         with tab1:
-            user_ingreso = st.text_input("Usuario")
-            pass_ingreso = st.text_input("Contraseña", type="password")
-            if st.button("Entrar"):
+            user_ingreso = st.text_input("Usuario", key="login_user")
+            pass_ingreso = st.text_input("Contraseña", type="password", key="login_pass")
+            if st.button("Entrar", key="btn_login"):
                 if user_ingreso in st.session_state.usuarios and st.session_state.usuarios[user_ingreso] == pass_ingreso:
                     st.session_state.vendedor_actual = user_ingreso
                     st.rerun()
@@ -60,9 +60,9 @@ if st.session_state.vendedor_actual is None:
                     st.error("Datos incorrectos.")
                     
         with tab2:
-            nuevo_user = st.text_input("Nuevo Usuario")
-            nuevo_pass = st.text_input("Nueva Contraseña", type="password")
-            if st.button("Registrar"):
+            nuevo_user = st.text_input("Nuevo Usuario", key="reg_user")
+            nuevo_pass = st.text_input("Nueva Contraseña", type="password", key="reg_pass")
+            if st.button("Registrar", key="btn_reg"):
                 if nuevo_user and nuevo_pass:
                     if nuevo_user in st.session_state.usuarios:
                         st.warning("El usuario ya existe.")
@@ -83,7 +83,7 @@ if st.session_state.pedido_seleccionado is not None:
     row = st.session_state.pedidos.loc[idx]
     id_formateado = f"#{row['ID_Base']:03d}-{row['ArchivoPC']}"
 
-    if st.button("← Volver a la lista de pedidos"):
+    if st.button("← Volver a la lista de pedidos", key="btn_volver_lista"):
         st.session_state.pedido_seleccionado = None
         st.rerun()
 
@@ -98,7 +98,7 @@ if st.session_state.pedido_seleccionado is not None:
         st.write(f"🎨 **Diseño:** {row['Diseno']}")
     with col_det3:
         st.write(f"📅 **Fecha:** {row['Fecha']} - {row['Hora']}")
-        nuevo_est_det = st.selectbox("Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]), key="est_det")
+        nuevo_est_det = st.selectbox("Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]), key="est_detalles_unico")
         if nuevo_est_det != row["Estado"]:
             st.session_state.pedidos.at[idx, "Estado"] = nuevo_est_det
             st.rerun()
@@ -109,7 +109,7 @@ if st.session_state.pedido_seleccionado is not None:
     
     col_btn_short, _ = st.columns([2, 4])
     with col_btn_short:
-        if st.button("✅ Marcar que TODOS llevan Short"):
+        if st.button("✅ Marcar que TODOS llevan Short", key="btn_todos_short_detalle"):
             df_temp = row["TablaTalles"].copy()
             if not df_temp.empty:
                 df_temp["Short"] = True
@@ -117,7 +117,6 @@ if st.session_state.pedido_seleccionado is not None:
                 st.success("¡Se marcó que todos llevan short!")
                 st.rerun()
 
-    # Usamos st.data_editor con un botón de guardado explícito para evitar pérdida de datos al tipear
     df_actual = row["TablaTalles"].copy()
     if "Short" not in df_actual.columns:
         df_actual["Short"] = False
@@ -126,29 +125,29 @@ if st.session_state.pedido_seleccionado is not None:
     df_actual["Talle"] = df_actual["Talle"].astype(str)
     df_actual["Número"] = df_actual["Número"].astype(str)
 
-    with st.form(f"form_talles_{idx}"):
-        tabla_editada = st.data_editor(
-            df_actual,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "Nombre": st.column_config.TextColumn("Nombre"),
-                "Talle": st.column_config.TextColumn("Talle"),
-                "Número": st.column_config.TextColumn("Número"),
-                "Short": st.column_config.CheckboxColumn("Lleva Short", default=False)
-            }
-        )
-        guardar_talles = st.form_submit_button("Guardar Cambios en Talles")
-        if guardar_talles:
-            st.session_state.pedidos.at[idx, "TablaTalles"] = tabla_editada
-            st.success("¡Talles guardados correctamente!")
+    # El data_editor guarda los cambios de manera fluida sin requerir un form global que recargue todo
+    tabla_editada = st.data_editor(
+        df_actual,
+        num_rows="dynamic",
+        use_container_width=True,
+        key=f"editor_talles_vivo_{idx}",
+        column_config={
+            "Nombre": st.column_config.TextColumn("Nombre"),
+            "Talle": st.column_config.TextColumn("Talle"),
+            "Número": st.column_config.TextColumn("Número"),
+            "Short": st.column_config.CheckboxColumn("Lleva Short", default=False)
+        }
+    )
+
+    if not tabla_editada.equals(df_actual):
+        st.session_state.pedidos.at[idx, "TablaTalles"] = tabla_editada
 
     st.divider()
 
     # Apartado de Observaciones
     st.markdown("### 📝 Observaciones del Pedido")
     obs_actual = row["Observaciones"] if "Observaciones" in row and pd.notna(row["Observaciones"]) else ""
-    nueva_obs = st.text_area("Agregue notas, aclaraciones o detalles adicionales del pedido:", value=obs_actual, key=f"obs_{idx}")
+    nueva_obs = st.text_area("Agregue notas, aclaraciones o detalles adicionales del pedido:", value=obs_actual, key=f"obs_texto_{idx}")
     if nueva_obs != obs_actual:
         st.session_state.pedidos.at[idx, "Observaciones"] = nueva_obs
 
@@ -160,7 +159,7 @@ with col_top1:
     st.title("🧵 Gestión de Producción")
 with col_top2:
     st.write(f"👤 **{st.session_state.vendedor_actual}**")
-    if st.button("Salir"):
+    if st.button("Salir", key="btn_logout"):
         st.session_state.vendedor_actual = None
         st.rerun()
 
@@ -172,16 +171,16 @@ tab_nuevo, tab_lista = st.tabs(["➕ Nuevo Pedido", "📋 Pedidos en Curso"])
 # --- PESTAÑA 1: NUEVO PEDIDO ---
 with tab_nuevo:
     st.markdown("### Registrar Nuevo Pedido")
-    with st.form("form_pedido_principal", clear_on_submit=True):
+    with st.form("form_pedido_principal_crear", clear_on_submit=True):
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            cliente = st.text_input("Nombre del Cliente")
-            telefono = st.text_input("Celular / WhatsApp (ej: 549370...)")
-            prenda = st.selectbox("Tipo de Prenda", ["Remera", "Buzo", "Camiseta de Fútbol", "Pantalón", "Otro"])
+            cliente = st.text_input("Nombre del Cliente", key="new_cliente")
+            telefono = st.text_input("Celular / WhatsApp (ej: 549370...)", key="new_tel")
+            prenda = st.selectbox("Tipo de Prenda", ["Remera", "Buzo", "Camiseta de Fútbol", "Pantalón", "Otro"], key="new_prenda")
         with col_f2:
-            cantidad = st.number_input("Cantidad", min_value=1, value=10)
-            diseno = st.text_input("Detalle del Diseño / Archivo")
-            archivo_pc = st.text_input("Nro de Archivo en PC (Opcional)", value="")
+            cantidad = st.number_input("Cantidad", min_value=1, value=10, key="new_cant")
+            diseno = st.text_input("Detalle del Diseño / Archivo", key="new_diseno")
+            archivo_pc = st.text_input("Nro de Archivo en PC (Opcional)", value="", key="new_pc")
             
         submitted = st.form_submit_button("Guardar y Registrar Pedido")
         if submitted and cliente:
@@ -226,7 +225,7 @@ with tab_lista:
     if st.session_state.pedidos.empty:
         st.info("No hay pedidos cargados todavía.")
     else:
-        filtro_estado = st.selectbox("Filtrar por Etapa:", ["Todos"] + estados_posibles)
+        filtro_estado = st.selectbox("Filtrar por Etapa:", ["Todos"] + estados_posibles, key="filtro_estado_lista")
         
         df_mostrar = st.session_state.pedidos.copy()
         if filtro_estado != "Todos":
@@ -251,8 +250,7 @@ with tab_lista:
                 col1, col2, col3, col4, col5 = st.columns([1.5, 2, 2, 2, 1.5])
                 
                 with col1:
-                    # Botón como enlace directo para abrir la ventana de detalles
-                    if st.button(f"📄 {id_formateado}", key=f"btn_abrir_{index}"):
+                    if st.button(f"📄 {id_formateado}", key=f"btn_abrir_pedido_{index}"):
                         st.session_state.pedido_seleccionado = index
                         st.rerun()
                     if alerta_tiempo:
@@ -276,7 +274,7 @@ with tab_lista:
                         "Estado", 
                         estados_posibles, 
                         index=estados_posibles.index(row["Estado"]),
-                        key=f"estado_{index}",
+                        key=f"estado_select_{index}",
                         label_visibility="collapsed"
                     )
                     if nuevo_estado != row["Estado"]:
@@ -285,7 +283,7 @@ with tab_lista:
                         
                 with col5:
                     st.write(f"**PC:**")
-                    nuevo_pc = st.text_input("PC", value=row["ArchivoPC"], key=f"pc_rapido_{index}", label_visibility="collapsed")
+                    nuevo_pc = st.text_input("PC", value=row["ArchivoPC"], key=f"pc_input_rapido_{index}", label_visibility="collapsed")
                     if nuevo_pc != row["ArchivoPC"]:
                         st.session_state.pedidos.at[index, "ArchivoPC"] = nuevo_pc.strip() if nuevo_pc.strip() else "S/N"
                         st.rerun()
