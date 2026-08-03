@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
@@ -14,7 +14,6 @@ st.markdown("""
 
 # --- INICIALIZACIÓN DE DATOS EN MEMORIA ---
 if "usuarios" not in st.session_state:
-    # Usuario por defecto para empezar (usuario: admin, pass: 1234)
     st.session_state.usuarios = {"admin": "1234"}
 
 if "vendedor_actual" not in st.session_state:
@@ -68,9 +67,9 @@ if st.session_state.vendedor_actual is None:
             else:
                 st.error("Completá ambos campos.")
                 
-    st.stop() # Detiene la ejecución acá hasta que el usuario se loguee
+    st.stop()
 
-# --- APLICACIÓN PRINCIPAL (Una vez logueado) ---
+# --- APLICACIÓN PRINCIPAL ---
 st.sidebar.write(f"👤 Conectado como: **{st.session_state.vendedor_actual}**")
 if st.sidebar.button("Cerrar Sesión"):
     st.session_state.vendedor_actual = None
@@ -92,10 +91,12 @@ with st.sidebar.form("form_pedido", clear_on_submit=True):
     submitted = st.form_submit_button("Guardar Pedido")
     if submitted and cliente:
         nuevo_id = f"#{len(st.session_state.pedidos) + 1:03d}"
-        ahora = datetime.now()
-        fecha_str = ahora.strftime("%d/%m/%Y")
-        hora_str = ahora.strftime("%H:%M")
-        anio_str = ahora.strftime("%Y")
+        
+        # Ajuste de horario para Argentina (UTC -3)
+        ahora_argentina = datetime.utcnow() - timedelta(hours=3)
+        fecha_str = ahora_argentina.strftime("%d/%m/%Y")
+        hora_str = ahora_argentina.strftime("%H:%M")
+        anio_str = ahora_argentina.strftime("%Y")
         
         nuevo_registro = pd.DataFrame([{
             "ID": nuevo_id,
@@ -120,14 +121,12 @@ st.subheader("📋 Estado de los Pedidos en Curso")
 if st.session_state.pedidos.empty:
     st.info("No hay pedidos cargados todavía. Agregá uno desde el panel izquierdo.")
 else:
-    # Filtro por estado
     filtro_estado = st.selectbox("Filtrar por Estado:", ["Todos"] + estados_posibles)
     
     df_mostrar = st.session_state.pedidos
     if filtro_estado != "Todos":
         df_mostrar = df_mostrar[df_mostrar["Estado"] == filtro_estado]
 
-    # Mostrar en tarjetas interactivas
     for index, row in df_mostrar.iterrows():
         with st.container():
             col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
@@ -135,7 +134,7 @@ else:
             with col1:
                 st.markdown(f"### **{row['ID']}**")
                 st.caption(f"📅 {row['Fecha']} - {row['Hora']} (Año {row['Anio']})")
-                st.caption(f" vendedor: *{row['Vendedor']}*")
+                st.caption(f"vendedor: *{row['Vendedor']}*")
                 
             with col2:
                 st.write(f"**Cliente:** {row['Cliente']}")
@@ -146,7 +145,6 @@ else:
                 st.write(f"🎨 **Diseño:** {row['Diseno']}")
                 
             with col4:
-                # Selector para cambiar de estado rápidamente
                 nuevo_estado = st.selectbox(
                     "Estado Actual", 
                     estados_posibles, 
@@ -157,7 +155,6 @@ else:
                     st.session_state.pedidos.at[index, "Estado"] = nuevo_estado
                     st.rerun()
                 
-                # Botón de WhatsApp Web integrado
                 if row["Telefono"]:
                     mensaje = f"Hola {row['Cliente']}! Te escribimos de la fábrica textil para avisarte que tu pedido {row['ID']} ({row['Cantidad']} {row['Prenda']}) se encuentra en estado: *{row['Estado']}*."
                     url_wa = f"https://wa.me/{row['Telefono']}?text={mensaje.replace(' ', '%20')}"
