@@ -4,6 +4,14 @@ from datetime import datetime, timedelta
 import os
 import pickle
 
+# --- PRUEBA DIRECTA DE ESCRITURA ---
+import os
+ruta_prueba = r"G:\pedidos programa"
+os.makedirs(ruta_prueba, exist_ok=True)
+archivo_prueba = os.path.join(ruta_prueba, "prueba.txt")
+with open(archivo_prueba, "w") as f:
+    f.write("Hola, esto es una prueba de escritura.")
+print("Archivo de prueba creado con éxito.")
 # --- CONFIGURACIÓN DE GOOGLE DRIVE ---
 # Ahora sí tiene las comillas y la 'r' adelante para que Windows lea bien la ruta
 RUTA_DRIVE = r"G:\pedidos programa"
