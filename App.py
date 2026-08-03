@@ -134,7 +134,6 @@ if st.session_state.pedido_seleccionado is not None:
         st.markdown("<div class='col-bloque'>", unsafe_allow_html=True)
         st.markdown("### 📋 Datos Generales")
         
-        # Link directo a WhatsApp
         num_wsp = ''.join(filter(str.isdigit, str(row['Telefono'])))
         link_wsp = f"https://wa.me/{num_wsp}" if num_wsp else "#"
         st.markdown(f"**👤 Cliente:** {row['Cliente']} | **📲 WhatsApp:** <a href='{link_wsp}' target='_blank'>{row['Telefono']} (Enviar msj)</a>", unsafe_allow_html=True)
