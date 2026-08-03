@@ -489,9 +489,9 @@ if not os.path.exists(RUTA_DRIVE):
     os.makedirs(RUTA_DRIVE)
 
 # Archivos locales que ahora se guardan directo en la nube de Google Drive
-ARCHIVO_PEDIDOS = os.path.join(G:\pedidos programa , "pedidos_taller.pkl")
-ARCHIVO_GASTOS = os.path.join(G:\pedidos programa , "gastos_taller.pkl")
-ARCHIVO_USUARIOS = os.path.join(G:\pedidos programa , "usuarios_taller.pkl")
+ARCHIVO_PEDIDOS = os.path.join("G:\pedidos programa", "pedidos_taller.pkl")
+ARCHIVO_GASTOS = os.path.join("G:\pedidos programa", "gastos_taller.pkl")
+ARCHIVO_USUARIOS = os.path.join("G:\pedidos programa", "usuarios_taller.pkl")
 
 # --- FUNCIONES DE GUARDADO Y CARGA LOCAL ---
 def guardar_datos():
