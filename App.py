@@ -34,14 +34,33 @@ if "pedidos" not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=[
         "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
         "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
-        "Precio_Total", "Sena", "Saldo", "Medio_Pago_Sena", "Medio_Pago_Saldo"
+        "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
     ])
-else:
-    # Actualizar base de datos vieja si le faltan las nuevas columnas de finanzas
-    nuevas_cols = {"Precio_Total": 0.0, "Sena": 0.0, "Saldo": 0.0, "Medio_Pago_Sena": "Efectivo", "Medio_Pago_Saldo": "A definir"}
-    for col, val in nuevas_cols.items():
-        if col not in st.session_state.pedidos.columns:
-            st.session_state.pedidos[col] = val
+
+# Actualizar base de datos vieja si le faltan las columnas de historial financiero
+nuevas_cols = {"Precio_Total": 0.0, "Sena": 0.0, "Total_Pagado": 0.0, "Saldo": 0.0, "Historial_Pagos": None}
+for col, val in nuevas_cols.items():
+    if col not in st.session_state.pedidos.columns:
+        st.session_state.pedidos[col] = val
+
+# Migrar pagos viejos al nuevo formato de historial sin perder datos
+for idx_row in st.session_state.pedidos.index:
+    if not isinstance(st.session_state.pedidos.at[idx_row, "Historial_Pagos"], list):
+        sena_vieja = float(st.session_state.pedidos.at[idx_row, "Sena"]) if pd.notna(st.session_state.pedidos.at[idx_row, "Sena"]) else 0.0
+        if sena_vieja > 0:
+            f_obj = st.session_state.pedidos.at[idx_row, "Fecha_Obj"]
+            hist_inicial = [{
+                "Fecha_Obj": f_obj, "Fecha": f_obj.strftime("%d/%m/%Y"), "Hora": f_obj.strftime("%H:%M"),
+                "Vendedor": st.session_state.pedidos.at[idx_row, "Vendedor"],
+                "Concepto": "Seña Inicial", "Monto": sena_vieja, "Medio": "Efectivo"
+            }]
+            st.session_state.pedidos.at[idx_row, "Historial_Pagos"] = hist_inicial
+            st.session_state.pedidos.at[idx_row, "Total_Pagado"] = sena_vieja
+            st.session_state.pedidos.at[idx_row, "Saldo"] = float(st.session_state.pedidos.at[idx_row, "Precio_Total"]) - sena_vieja
+        else:
+            st.session_state.pedidos.at[idx_row, "Historial_Pagos"] = []
+            st.session_state.pedidos.at[idx_row, "Total_Pagado"] = 0.0
+            st.session_state.pedidos.at[idx_row, "Saldo"] = float(st.session_state.pedidos.at[idx_row, "Precio_Total"])
 
 estados_posibles = [
     "1. Ingreso de pedido", "2. Diseño y confirmación de cliente", 
@@ -54,7 +73,6 @@ tipos_prenda = [
 ]
 
 medios_pago = ["Efectivo", "Transferencia", "Tarjeta", "QR"]
-medios_pago_saldo = ["A definir", "Efectivo", "Transferencia", "Tarjeta", "QR"]
 
 # --- LOGIN ---
 if st.session_state.vendedor_actual is None:
@@ -105,12 +123,12 @@ if st.session_state.pedido_seleccionado is not None:
     with col_det1:
         st.write(f"**Cliente:** {row['Cliente']}")
         st.write(f"📲 **WhatsApp:** {row['Telefono']}")
-        st.write(f"👤 **Vendedor:** {row['Vendedor']}")
+        st.write(f"👤 **Vendedor que tomó pedido:** {row['Vendedor']}")
     with col_det2:
         st.write(f"**Prenda:** {row['Prenda']} (x{row['Cantidad']})")
         st.write(f"🎨 **Diseño:** {row['Diseno']}")
     with col_det3:
-        st.write(f"📅 **Fecha:** {row['Fecha']} - {row['Hora']}")
+        st.write(f"📅 **Fecha ingreso:** {row['Fecha']} - {row['Hora']}")
         nuevo_est_det = st.selectbox("Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]), key="est_det_unico")
         if nuevo_est_det != row["Estado"]:
             st.session_state.pedidos.at[idx, "Estado"] = nuevo_est_det
@@ -118,28 +136,68 @@ if st.session_state.pedido_seleccionado is not None:
 
     st.divider()
 
-    # Sección Financiera Editable
-    st.markdown("### 💰 Finanzas del Pedido")
-    with st.form(f"form_finanzas_{idx}"):
-        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-        with col_f1:
-            nuevo_precio = st.number_input("Precio Total ($)", value=float(row['Precio_Total']), step=1000.0)
-        with col_f2:
-            nueva_sena = st.number_input("Entrega / Seña ($)", value=float(row['Sena']), step=1000.0)
-            nuevo_mp_sena = st.selectbox("Medio (Seña)", medios_pago, index=medios_pago.index(row['Medio_Pago_Sena']) if row['Medio_Pago_Sena'] in medios_pago else 0)
-        with col_f3:
-            st.metric("Falta Cancelar (Saldo)", f"${nuevo_precio - nueva_sena:,.2f}")
-        with col_f4:
-            nuevo_mp_saldo = st.selectbox("Medio esperado (Saldo)", medios_pago_saldo, index=medios_pago_saldo.index(row['Medio_Pago_Saldo']) if row['Medio_Pago_Saldo'] in medios_pago_saldo else 0)
-        
-        if st.form_submit_button("Actualizar Precios y Pagos"):
-            st.session_state.pedidos.at[idx, "Precio_Total"] = nuevo_precio
-            st.session_state.pedidos.at[idx, "Sena"] = nueva_sena
-            st.session_state.pedidos.at[idx, "Saldo"] = nuevo_precio - nueva_sena
-            st.session_state.pedidos.at[idx, "Medio_Pago_Sena"] = nuevo_mp_sena
-            st.session_state.pedidos.at[idx, "Medio_Pago_Saldo"] = nuevo_mp_saldo
-            st.success("Valores actualizados!")
-            st.rerun()
+    # --- HISTORIAL FINANCIERO DEL PEDIDO ---
+    st.markdown("### 💰 Finanzas y Pagos")
+    
+    # Métricas resumen
+    col_r1, col_r2, col_r3 = st.columns(3)
+    col_r1.metric("Precio Total Acordado", f"${row['Precio_Total']:,.2f}")
+    col_r2.metric("Total Pagado (Abonado)", f"${row['Total_Pagado']:,.2f}")
+    col_r3.metric("Saldo Restante (Falta Pagar)", f"${row['Saldo']:,.2f}")
+
+    # Tabla de Historial
+    st.markdown("#### 📜 Archivo Histórico de Pagos")
+    if isinstance(row['Historial_Pagos'], list) and len(row['Historial_Pagos']) > 0:
+        df_historial = pd.DataFrame(row['Historial_Pagos']).drop(columns=["Fecha_Obj"])
+        st.dataframe(df_historial, use_container_width=True, hide_index=True)
+    else:
+        st.info("Aún no se registraron señas ni pagos para este pedido.")
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if row['Saldo'] > 0:
+            with st.expander("➕ Registrar Pago de Saldo (Cancelación)"):
+                with st.form(f"form_pago_{idx}"):
+                    st.write("Registrá el ingreso de dinero y actualizá el saldo.")
+                    monto_a_pagar = st.number_input("Monto a Abonar ($)", min_value=0.0, max_value=float(row['Saldo']), value=float(row['Saldo']), step=1000.0)
+                    medio_pago_saldo = st.selectbox("Medio de Pago", medios_pago)
+                    
+                    if st.form_submit_button("Confirmar Pago"):
+                        if monto_a_pagar > 0:
+                            ahora = datetime.utcnow() - timedelta(hours=3)
+                            nuevo_pago = {
+                                "Fecha_Obj": ahora,
+                                "Fecha": ahora.strftime("%d/%m/%Y"),
+                                "Hora": ahora.strftime("%H:%M"),
+                                "Vendedor": st.session_state.vendedor_actual, # Vendedor que cobra el saldo
+                                "Concepto": "Cancelación de Saldo",
+                                "Monto": monto_a_pagar,
+                                "Medio": medio_pago_saldo
+                            }
+                            
+                            historial_actual = row['Historial_Pagos']
+                            if not isinstance(historial_actual, list): historial_actual = []
+                            historial_actual.append(nuevo_pago)
+                            
+                            nuevo_pagado = row['Total_Pagado'] + monto_a_pagar
+                            
+                            st.session_state.pedidos.at[idx, "Historial_Pagos"] = historial_actual
+                            st.session_state.pedidos.at[idx, "Total_Pagado"] = nuevo_pagado
+                            st.session_state.pedidos.at[idx, "Saldo"] = row['Precio_Total'] - nuevo_pagado
+                            st.success("¡Pago registrado en el historial!")
+                            st.rerun()
+        else:
+            st.success("✅ Este pedido se encuentra totalmente PAGADO.")
+
+    with col_btn2:
+        with st.expander("✏️ Modificar Precio Total del Pedido"):
+            with st.form(f"form_precio_{idx}"):
+                nuevo_precio = st.number_input("Nuevo Precio Total ($)", min_value=float(row['Total_Pagado']), value=float(row['Precio_Total']), step=1000.0)
+                if st.form_submit_button("Actualizar Precio"):
+                    st.session_state.pedidos.at[idx, "Precio_Total"] = nuevo_precio
+                    st.session_state.pedidos.at[idx, "Saldo"] = nuevo_precio - row['Total_Pagado']
+                    st.success("Precio actualizado.")
+                    st.rerun()
 
     st.divider()
 
@@ -223,18 +281,29 @@ with tab_nuevo:
             archivo_pc = st.text_input("Nro PC (Opcional)")
             
         st.markdown("#### 💰 Pagos")
-        col_p1, col_p2, col_p3 = st.columns(3)
+        col_p1, col_p2 = st.columns(2)
         with col_p1:
             precio_tot = st.number_input("Precio Total ($)", min_value=0.0, step=1000.0)
         with col_p2:
-            sena = st.number_input("Entrega / Seña ($)", min_value=0.0, step=1000.0)
+            sena = st.number_input("Entrega / Seña Inicial ($)", min_value=0.0, step=1000.0)
             mp_sena = st.selectbox("Medio de Pago (Seña)", medios_pago)
-        with col_p3:
-            st.info("El saldo a cancelar se calcula automáticamente.")
-            mp_saldo = st.selectbox("Medio a pagar el saldo", medios_pago_saldo)
 
         if st.form_submit_button("Guardar Pedido") and cliente:
             ahora = datetime.utcnow() - timedelta(hours=3)
+            
+            # Generar primer pago para el historial
+            historial_inicial = []
+            if sena > 0:
+                historial_inicial.append({
+                    "Fecha_Obj": ahora,
+                    "Fecha": ahora.strftime("%d/%m/%Y"),
+                    "Hora": ahora.strftime("%H:%M"),
+                    "Vendedor": st.session_state.vendedor_actual,
+                    "Concepto": "Seña",
+                    "Monto": sena,
+                    "Medio": mp_sena
+                })
+
             nuevo_df = pd.DataFrame([{
                 "ID_Base": len(st.session_state.pedidos) + 1,
                 "Cliente": cliente, "Telefono": telefono, "Prenda": prenda, "Cantidad": cantidad,
@@ -242,8 +311,8 @@ with tab_nuevo:
                 "TablaTalles": pd.DataFrame([{"Nombre": "", "Talle": "", "Número": "", "Short": False}]),
                 "Observaciones": "", "Imagen": None, "Estado": estados_posibles[0], "Vendedor": st.session_state.vendedor_actual,
                 "Fecha_Obj": ahora, "Fecha": ahora.strftime("%d/%m/%Y"), "Hora": ahora.strftime("%H:%M"), "Anio": ahora.strftime("%Y"),
-                "Precio_Total": precio_tot, "Sena": sena, "Saldo": precio_tot - sena, 
-                "Medio_Pago_Sena": mp_sena, "Medio_Pago_Saldo": mp_saldo
+                "Precio_Total": precio_tot, "Sena": sena, "Total_Pagado": sena, "Saldo": precio_tot - sena,
+                "Historial_Pagos": historial_inicial
             }])
             st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_df], ignore_index=True)
             st.success("¡Pedido guardado!")
@@ -291,7 +360,7 @@ with tab_lista:
                             st.rerun()
                     with c5:
                         st.caption(f"💰 Total: ${row['Precio_Total']:,.0f}")
-                        st.caption(f"💸 Falta: ${row['Saldo']:,.0f}")
+                        st.markdown(f"<span style='color:{'#2E7D32' if row['Saldo']==0 else '#D32F2F'}'><b>💸 Falta: ${row['Saldo']:,.0f}</b></span>", unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
 # --- PESTAÑA 3: FINANZAS Y STOCK ---
@@ -302,19 +371,22 @@ with tab_finanzas:
     inicio_sem = hoy - timedelta(days=hoy.weekday())
     inicio_sem = inicio_sem.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # Cálculos semanales
-    pedidos_sem = st.session_state.pedidos[st.session_state.pedidos["Fecha_Obj"] >= inicio_sem]
+    # 1. Calcular Ingresos reales de la semana (leyendo fecha de cada pago en los historiales)
+    total_ingresos = 0.0
+    for pagos_lista in st.session_state.pedidos["Historial_Pagos"]:
+        if isinstance(pagos_lista, list):
+            for pago in pagos_lista:
+                if "Fecha_Obj" in pago and pago["Fecha_Obj"] >= inicio_sem:
+                    total_ingresos += float(pago["Monto"])
+                    
+    # 2. Calcular Gastos reales de la semana
     gastos_sem = st.session_state.gastos[st.session_state.gastos["Fecha_Obj"] >= inicio_sem]
+    total_gastos = gastos_sem["Total"].sum() if not gastos_sem.empty else 0.0
     
-    ingresos_senas = pedidos_sem["Sena"].sum() if not pedidos_sem.empty else 0
-    # Asumimos ingreso del saldo si el pedido se marca como entregado esta semana (simplificación)
-    ingresos_saldos = pedidos_sem[pedidos_sem["Estado"] == "6. Entregado"]["Saldo"].sum() if not pedidos_sem.empty else 0
-    total_ingresos = ingresos_senas + ingresos_saldos
-    total_gastos = gastos_sem["Total"].sum() if not gastos_sem.empty else 0
     balance_neto = total_ingresos - total_gastos
 
     col_m1, col_m2, col_m3 = st.columns(3)
-    with col_m1: st.markdown(f"<div class='metric-card'><h4>📈 Ingresos Semana</h4><h2>${total_ingresos:,.2f}</h2><p>Señas: ${ingresos_senas:,.2f} | Saldos: ${ingresos_saldos:,.2f}</p></div>", unsafe_allow_html=True)
+    with col_m1: st.markdown(f"<div class='metric-card'><h4>📈 Ingresos Semana</h4><h2>${total_ingresos:,.2f}</h2><p>Pagos y señas recibidas esta semana</p></div>", unsafe_allow_html=True)
     with col_m2: st.markdown(f"<div class='metric-card'><h4>📉 Gastos Semana</h4><h2 style='color:#D32F2F;'>${total_gastos:,.2f}</h2><p>Compras e insumos</p></div>", unsafe_allow_html=True)
     with col_m3: st.markdown(f"<div class='metric-card'><h4>⚖️ Balance</h4><h2 style='color:{'#2E7D32' if balance_neto>=0 else '#D32F2F'};'>${balance_neto:,.2f}</h2><p>Ingresos - Gastos</p></div>", unsafe_allow_html=True)
 
