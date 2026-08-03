@@ -25,10 +25,9 @@ if "vendedor_actual" not in st.session_state:
 
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=[
-        "ID", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
+        "ID", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "DetalleTalles", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
     ])
 
-# Nuevas etapas solicitadas
 estados_posibles = [
     "1. Ingreso de pedido", 
     "2. Diseño y confirmación de cliente", 
@@ -98,10 +97,13 @@ with tab_nuevo:
         with col_f2:
             cantidad = st.number_input("Cantidad", min_value=1, value=10)
             diseno = st.text_input("Detalle del Diseño / Archivo")
+            archivo_pc = st.text_input("Nro de Archivo en PC (ej: 125)", value="")
             
         submitted = st.form_submit_button("Guardar y Registrar Pedido")
         if submitted and cliente:
-            nuevo_id = f"#{len(st.session_state.pedidos) + 1:03d}"
+            secuencial = len(st.session_state.pedidos) + 1
+            num_pc_str = archivo_pc.strip() if archivo_pc.strip() else "0"
+            nuevo_id = f"#{secuencial:03d}-{num_pc_str}"
             
             ahora_argentina = datetime.utcnow() - timedelta(hours=3)
             fecha_str = ahora_argentina.strftime("%d/%m/%Y")
@@ -115,6 +117,8 @@ with tab_nuevo:
                 "Prenda": prenda,
                 "Cantidad": cantidad,
                 "Diseno": diseno,
+                "ArchivoPC": num_pc_str,
+                "DetalleTalles": "",
                 "Estado": estados_posibles[0],
                 "Vendedor": st.session_state.vendedor_actual,
                 "Fecha_Obj": ahora_argentina,
@@ -126,7 +130,7 @@ with tab_nuevo:
             st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_registro], ignore_index=True)
             st.success(f"¡Pedido {nuevo_id} guardado con éxito!")
 
-# --- PESTAÑA 2: PEDIDOS INGRESADOS (ORDENADOS MÁS VIEJOS PRIMERO) ---
+# --- PESTAÑA 2: PEDIDOS INGRESADOS ---
 with tab_lista:
     st.markdown("### Lista de Pedidos")
     
@@ -139,14 +143,12 @@ with tab_lista:
         if filtro_estado != "Todos":
             df_mostrar = df_mostrar[df_mostrar["Estado"] == filtro_estado]
 
-        # Ordenar: Más viejos primero (ascendente por fecha de creación)
         if not df_mostrar.empty:
             df_mostrar = df_mostrar.sort_values(by="Fecha_Obj", ascending=True)
 
         ahora_actual = datetime.utcnow() - timedelta(hours=3)
 
         for index, row in df_mostrar.iterrows():
-            # Control de alerta de 1 semana en etapa de Diseño
             alerta_tiempo = False
             if row["Estado"] == "2. Diseño y confirmación de cliente":
                 diferencia = ahora_actual - row["Fecha_Obj"]
@@ -190,4 +192,16 @@ with tab_lista:
                         mensaje = f"Hola {row['Cliente']}! Te escribimos de la fábrica textil para avisarte que tu pedido {row['ID']} ({row['Cantidad']} {row['Prenda']}) se encuentra en la etapa: *{row['Estado']}*."
                         url_wa = f"https://wa.me/{row['Telefono']}?text={mensaje.replace(' ', '%20')}"
                         st.markdown(f"[💬 Enviar WhatsApp]({url_wa})", unsafe_allow_html=True)
+
+                # --- EXPANDER PARA VER Y EDITAR DETALLE DE TALLES Y NOMBRES ---
+                with st.expander("👕 Ver / Editar Detalle de Talles, Números y Nombres"):
+                    nuevo_detalle = st.text_area(
+                        "Lista de talles (Ej: Talle XL - 10 Juan, Talle L - 7 Pedro...)",
+                        value=row["DetalleTalles"],
+                        key=f"detalle_{row['ID']}"
+                    )
+                    if nuevo_detalle != row["DetalleTalles"]:
+                        st.session_state.pedidos.at[index, "DetalleTalles"] = nuevo_detalle
+                        st.success("¡Detalle de talles actualizado!")
+
                 st.markdown('</div>', unsafe_allow_html=True)
