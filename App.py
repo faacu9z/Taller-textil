@@ -22,6 +22,10 @@ def cargar_datos_iniciales():
         st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
 
 cargar_datos_iniciales()
+    if "gastos" not in st.session_state:
+        st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
+
+cargar_datos_iniciales()
 
 # --- ESTILOS VISUALES ---
 st.markdown("""
