@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
+st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🛒", layout="wide")
 
 # --- RUTA DE GUARDADO LOCAL AUTOMÁTICA ---
 CARPETA_DATOS = Path.home() / "TallerTextilData"
