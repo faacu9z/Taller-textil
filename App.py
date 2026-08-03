@@ -49,13 +49,16 @@ def cargar_datos_iniciales():
             st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
 
 def guardar_en_disco():
-    with pd.ExcelWriter(ARCH_EXCEL, engine="openpyxl") as writer:
-        df_p_guardar = st.session_state.pedidos.copy()
-        if "Historial_Pagos" in df_p_guardar.columns:
-            df_p_guardar["Historial_Pagos"] = df_p_guardar["Historial_Pagos"].astype(str)
-        
-        df_p_guardar.to_excel(writer, sheet_name="Pedidos", index=False)
-        st.session_state.gastos.to_excel(writer, sheet_name="Gastos", index=False)
+    try:
+        with pd.ExcelWriter(ARCH_EXCEL, engine="openpyxl") as writer:
+            df_p_guardar = st.session_state.pedidos.copy()
+            if "Historial_Pagos" in df_p_guardar.columns:
+                df_p_guardar["Historial_Pagos"] = df_p_guardar["Historial_Pagos"].astype(str)
+            
+            df_p_guardar.to_excel(writer, sheet_name="Pedidos", index=False)
+            st.session_state.gastos.to_excel(writer, sheet_name="Gastos", index=False)
+    except ModuleNotFoundError:
+        pass  # Si falta openpyxl en Streamlit Cloud, permite que la app siga corriendo en memoria sin romperse
 
 cargar_datos_iniciales()
 
@@ -226,7 +229,7 @@ with tab_nuevo:
                 st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_df], ignore_index=True)
             
             guardar_en_disco()
-            st.success("¡Pedido guardado con éxito en tu PC!")
+            st.success("¡Pedido guardado con éxito!")
 
 # --- PESTAÑA 2: LISTA DE PEDIDOS (CON BUSCADOR) ---
 with tab_lista:
@@ -280,7 +283,7 @@ with tab_finanzas:
         with st.form("form_gastos", clear_on_submit=True):
             item = st.text_input("Insumo / Producto")
             cant_gasto = st.number_input("Cantidad", min_value=1, value=1)
-            precio_uni = st.number_input("Costo Unitario ($)", min_value=0.0, step=100.0)
+            precio_uni = st.number_input("Costo Unitario ($)", min_value=0.0, step=1000.0)
             if st.form_submit_button("Guardar Gasto") and item:
                 hoy = datetime.utcnow() - timedelta(hours=3)
                 n_gasto = pd.DataFrame([{"Fecha_Obj": hoy, "Fecha": hoy.strftime("%d/%m/%Y"), "Item": item, "Cantidad": cant_gasto, "Precio_Unitario": precio_uni, "Total": cant_gasto * precio_uni}])
