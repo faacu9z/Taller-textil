@@ -1,5 +1,3 @@
-# Taller-textil
-Aplicacion o programa para gestionar taller de textil y estado de prendas
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -15,14 +13,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🧵 Control de Producción - Taller Textil")
+st.write("Aplicación para gestionar taller de textil y estado de prendas.")
 
-# Simulación de Base de Datos en memoria (Se puede pasar a SQLite o Google Sheets después)
+# Simulación de Base de Datos en memoria
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=[
         "ID", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "Estado", "Fecha"
     ])
 
-estados_posibles = ["1. Pendiente / Ingresado", "2. Diseño", "3. Impresión y Plancha", "4. Costura", "5. Control de Calidad", "6. Listo / Entregado"]
+estados_posibles = [
+    "1. Pendiente / Ingresado", 
+    "2. Diseño", 
+    "3. Impresión y Plancha", 
+    "4. Costura", 
+    "5. Control de Calidad", 
+    "6. Listo / Entregado"
+]
 
 # --- MENÚ LATERAL: NUEVO PEDIDO ---
 st.sidebar.header("➕ Nuevo Pedido")
@@ -83,7 +89,7 @@ else:
                 st.write(f"🎨 **Diseño:** {row['Diseno']}")
                 
             with col4:
-                # Selector para cambiar de estado rápidamente con un toque
+                # Selector para cambiar de estado rápidamente
                 nuevo_estado = st.selectbox(
                     "Estado Actual", 
                     estados_posibles, 
