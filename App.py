@@ -11,9 +11,8 @@ st.markdown("""
     .main { background-color: #FAFAFA; }
     .stButton>button { width: 100%; border-radius: 6px; font-weight: 500; background-color: #111111; color: white; border: none; padding: 0.5rem 1rem; }
     .stButton>button:hover { background-color: #333333; color: white; }
-    .card-pedido { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    .card-pedido { background: white; padding: 15px 20px; border-radius: 10px; border: 1px solid #EAEAEA; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .alerta-roja { color: #D32F2F; font-weight: bold; background-color: #FFEBEE; padding: 2px 6px; border-radius: 4px; }
-    .modal-detalle { background: #FFFFFF; padding: 25px; border-radius: 12px; border: 1px solid #E0E0E0; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -24,9 +23,12 @@ if "usuarios" not in st.session_state:
 if "vendedor_actual" not in st.session_state:
     st.session_state.vendedor_actual = None
 
+if "pedido_seleccionado" not in st.session_state:
+    st.session_state.pedido_seleccionado = None
+
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=[
-        "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
+        "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", "Observaciones", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
     ])
 
 estados_posibles = [
@@ -71,6 +73,87 @@ if st.session_state.vendedor_actual is None:
                     st.error("Completá los campos.")
     st.stop()
 
+# --- VISTA DETALLADA DE UN PEDIDO (VENTANA INDEPENDIENTE) ---
+if st.session_state.pedido_seleccionado is not None:
+    idx = st.session_state.pedido_seleccionado
+    if idx not in st.session_state.pedidos.index:
+        st.session_state.pedido_seleccionado = None
+        st.rerun()
+        
+    row = st.session_state.pedidos.loc[idx]
+    id_formateado = f"#{row['ID_Base']:03d}-{row['ArchivoPC']}"
+
+    if st.button("← Volver a la lista de pedidos"):
+        st.session_state.pedido_seleccionado = None
+        st.rerun()
+
+    st.markdown(f"## 📂 Detalle del Pedido: {id_formateado}")
+    
+    col_det1, col_det2, col_det3 = st.columns(3)
+    with col_det1:
+        st.write(f"**Cliente:** {row['Cliente']}")
+        st.write(f"📲 **WhatsApp:** {row['Telefono']}")
+    with col_det2:
+        st.write(f"**Prenda:** {row['Prenda']} (x{row['Cantidad']})")
+        st.write(f"🎨 **Diseño:** {row['Diseno']}")
+    with col_det3:
+        st.write(f"📅 **Fecha:** {row['Fecha']} - {row['Hora']}")
+        nuevo_est_det = st.selectbox("Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]), key="est_det")
+        if nuevo_est_det != row["Estado"]:
+            st.session_state.pedidos.at[idx, "Estado"] = nuevo_est_det
+            st.rerun()
+
+    st.divider()
+
+    st.markdown("### 📋 Listado de Talles, Nombres y Números")
+    
+    col_btn_short, _ = st.columns([2, 4])
+    with col_btn_short:
+        if st.button("✅ Marcar que TODOS llevan Short"):
+            df_temp = row["TablaTalles"].copy()
+            if not df_temp.empty:
+                df_temp["Short"] = True
+                st.session_state.pedidos.at[idx, "TablaTalles"] = df_temp
+                st.success("¡Se marcó que todos llevan short!")
+                st.rerun()
+
+    # Usamos st.data_editor con un botón de guardado explícito para evitar pérdida de datos al tipear
+    df_actual = row["TablaTalles"].copy()
+    if "Short" not in df_actual.columns:
+        df_actual["Short"] = False
+    df_actual["Short"] = df_actual["Short"].astype(bool)
+    df_actual["Nombre"] = df_actual["Nombre"].astype(str)
+    df_actual["Talle"] = df_actual["Talle"].astype(str)
+    df_actual["Número"] = df_actual["Número"].astype(str)
+
+    with st.form(f"form_talles_{idx}"):
+        tabla_editada = st.data_editor(
+            df_actual,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "Nombre": st.column_config.TextColumn("Nombre"),
+                "Talle": st.column_config.TextColumn("Talle"),
+                "Número": st.column_config.TextColumn("Número"),
+                "Short": st.column_config.CheckboxColumn("Lleva Short", default=False)
+            }
+        )
+        guardar_talles = st.form_submit_button("Guardar Cambios en Talles")
+        if guardar_talles:
+            st.session_state.pedidos.at[idx, "TablaTalles"] = tabla_editada
+            st.success("¡Talles guardados correctamente!")
+
+    st.divider()
+
+    # Apartado de Observaciones
+    st.markdown("### 📝 Observaciones del Pedido")
+    obs_actual = row["Observaciones"] if "Observaciones" in row and pd.notna(row["Observaciones"]) else ""
+    nueva_obs = st.text_area("Agregue notas, aclaraciones o detalles adicionales del pedido:", value=obs_actual, key=f"obs_{idx}")
+    if nueva_obs != obs_actual:
+        st.session_state.pedidos.at[idx, "Observaciones"] = nueva_obs
+
+    st.stop()
+
 # --- BARRA SUPERIOR DE USUARIO ---
 col_top1, col_top2 = st.columns([6, 1])
 with col_top1:
@@ -110,7 +193,6 @@ with tab_nuevo:
             hora_str = ahora_argentina.strftime("%H:%M")
             anio_str = ahora_argentina.strftime("%Y")
             
-            # DataFrame inicial con columnas Nombre, Talle, Número y Short (booleano)
             df_vacio = pd.DataFrame(
                 [{"Nombre": "", "Talle": "", "Número": "", "Short": False}],
                 columns=["Nombre", "Talle", "Número", "Short"]
@@ -125,6 +207,7 @@ with tab_nuevo:
                 "Diseno": diseno,
                 "ArchivoPC": num_pc_str,
                 "TablaTalles": df_vacio,
+                "Observaciones": "",
                 "Estado": estados_posibles[0],
                 "Vendedor": st.session_state.vendedor_actual,
                 "Fecha_Obj": ahora_argentina,
@@ -134,9 +217,9 @@ with tab_nuevo:
             }])
             
             st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_registro], ignore_index=True)
-            st.success(f"¡Pedido guardado con éxito! Ya podés ver los detalles en la pestaña 'Pedidos en Curso'.")
+            st.success("¡Pedido guardado con éxito!")
 
-# --- PESTAÑA 2: PEDIDOS INGRESADOS ---
+# --- PESTAÑA 2: PEDIDOS INGRESADOS (LISTA LIMPIA Y MINIMALISTA) ---
 with tab_lista:
     st.markdown("### Lista de Pedidos")
     
@@ -165,21 +248,17 @@ with tab_lista:
 
             with st.container():
                 st.markdown('<div class="card-pedido">', unsafe_allow_html=True)
-                col1, col2, col3, col4 = st.columns([1.5, 2, 2, 2])
+                col1, col2, col3, col4, col5 = st.columns([1.5, 2, 2, 2, 1.5])
                 
                 with col1:
-                    st.markdown(f"#### **{id_formateado}**")
+                    # Botón como enlace directo para abrir la ventana de detalles
+                    if st.button(f"📄 {id_formateado}", key=f"btn_abrir_{index}"):
+                        st.session_state.pedido_seleccionado = index
+                        st.rerun()
                     if alerta_tiempo:
                         st.markdown(f'<span class="alerta-roja">📅 {row["Fecha"]} - {row["Hora"]}</span>', unsafe_allow_html=True)
                     else:
                         st.caption(f"📅 {row['Fecha']} - {row['Hora']}")
-                    st.caption(f"Vendedor: {row['Vendedor']}")
-                    
-                    # Modificar número de PC de forma independiente
-                    nuevo_pc = st.text_input("Nro Archivo PC", value=row["ArchivoPC"], key=f"pc_{index}")
-                    if nuevo_pc != row["ArchivoPC"]:
-                        st.session_state.pedidos.at[index, "ArchivoPC"] = nuevo_pc.strip() if nuevo_pc.strip() else "S/N"
-                        st.rerun()
                     
                 with col2:
                     st.write(f"**Cliente:** {row['Cliente']}")
@@ -189,70 +268,31 @@ with tab_lista:
                     st.write(f"**Prenda:** {row['Prenda']} (x{row['Cantidad']})")
                     st.write(f"🎨 **Diseño:** {row['Diseno']}")
                     if alerta_tiempo:
-                        st.markdown('<span class="alerta-roja">⚠️ Más de 1 semana en diseño</span>', unsafe_allow_html=True)
+                        st.markdown('<span class="alerta-roja">⚠️ >1 semana en diseño</span>', unsafe_allow_html=True)
                     
                 with col4:
+                    st.write(f"**Estado:**")
                     nuevo_estado = st.selectbox(
-                        "Cambiar Etapa", 
+                        "Estado", 
                         estados_posibles, 
                         index=estados_posibles.index(row["Estado"]),
-                        key=f"estado_{row['ID_Base']}"
+                        key=f"estado_{index}",
+                        label_visibility="collapsed"
                     )
                     if nuevo_estado != row["Estado"]:
                         st.session_state.pedidos.at[index, "Estado"] = nuevo_estado
                         st.rerun()
-                    
+                        
+                with col5:
+                    st.write(f"**PC:**")
+                    nuevo_pc = st.text_input("PC", value=row["ArchivoPC"], key=f"pc_rapido_{index}", label_visibility="collapsed")
+                    if nuevo_pc != row["ArchivoPC"]:
+                        st.session_state.pedidos.at[index, "ArchivoPC"] = nuevo_pc.strip() if nuevo_pc.strip() else "S/N"
+                        st.rerun()
+                        
                     if row["Telefono"]:
-                        mensaje = f"Hola {row['Cliente']}! Te escribimos de la fábrica textil para avisarte que tu pedido {id_formateado} ({row['Cantidad']} {row['Prenda']}) se encuentra en la etapa: *{row['Estado']}*."
+                        mensaje = f"Hola {row['Cliente']}! Te escribimos de la fábrica textil para avisarte que tu pedido {id_formateado} se encuentra en la etapa: *{row['Estado']}*."
                         url_wa = f"https://wa.me/{row['Telefono']}?text={mensaje.replace(' ', '%20')}"
-                        st.markdown(f"[💬 Enviar WhatsApp]({url_wa})", unsafe_allow_html=True)
-
-                st.markdown('---')
-
-                # --- SECCIÓN INTERNA DEL PEDIDO (ABIERTA DIRECTAMENTE EN LA TARJETA) ---
-                st.markdown(f"### 📂 Detalle del Pedido: {id_formateado}")
-                st.write(f"**Descripción:** Pedido de {row['Cantidad']} {row['Prenda']} para el cliente **{row['Cliente']}**. Estado actual: *{row['Estado']}*.")
-                
-                st.markdown("---")
-                st.write("#### 📋 Listado de Nombres, Talles, Números y Shorts")
-                
-                # Opción para marcar que TODOS llevan short
-                col_btn_short, _ = st.columns([2, 4])
-                with col_btn_short:
-                    if st.button("✅ Marcar que TODOS llevan Short", key=f"btn_todos_short_{index}"):
-                        df_temp = row["TablaTalles"].copy()
-                        if not df_temp.empty:
-                            df_temp["Short"] = True
-                            st.session_state.pedidos.at[index, "TablaTalles"] = df_temp
-                            st.success("¡Se marcó que todos llevan short!")
-                            st.rerun()
-
-                # Editor de datos estable con configuración de tipos explícita para evitar pérdida de foco/valores
-                df_actual = row["TablaTalles"].copy()
-                
-                # Asegurar tipos de datos correctos en el DataFrame
-                if "Short" not in df_actual.columns:
-                    df_actual["Short"] = False
-                df_actual["Short"] = df_actual["Short"].astype(bool)
-                df_actual["Nombre"] = df_actual["Nombre"].astype(str)
-                df_actual["Talle"] = df_actual["Talle"].astype(str)
-                df_actual["Número"] = df_actual["Número"].astype(str)
-
-                tabla_editada = st.data_editor(
-                    df_actual,
-                    num_rows="dynamic",
-                    key=f"editor_talles_{index}",
-                    use_container_width=True,
-                    column_config={
-                        "Nombre": st.column_config.TextColumn("Nombre"),
-                        "Talle": st.column_config.TextColumn("Talle"),
-                        "Número": st.column_config.TextColumn("Número"),
-                        "Short": st.column_config.CheckboxColumn("Lleva Short", default=False)
-                    }
-                )
-
-                # Guardado automático e inmediato al interactuar con la tabla
-                if not tabla_editada.equals(df_actual):
-                    st.session_state.pedidos.at[index, "TablaTalles"] = tabla_editada
+                        st.markdown(f"[💬 WhatsApp]({url_wa})", unsafe_allow_html=True)
 
                 st.markdown('</div>', unsafe_allow_html=True)
