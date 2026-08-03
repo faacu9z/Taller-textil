@@ -471,3 +471,58 @@ with tab_finanzas:
         else:
             df_g_mostrar = gastos_periodo.copy().sort_values(by="Fecha_Obj", ascending=False).drop(columns=["Fecha_Obj"])
             st.dataframe(df_g_mostrar, use_container_width=True, hide_index=True)
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import os
+import pickle
+
+# --- CONFIGURACIÓN DE GOOGLE DRIVE ---
+# Acá ponés la ruta exacta de la carpeta de Google Drive en tu PC.
+# Ejemplo 1 (Si te crea el disco G): "G:/Mi unidad/BaseDatos_Taller"
+# Ejemplo 2 (Si es una carpeta en tu disco C): "C:/Users/TuUsuario/Google Drive/BaseDatos_Taller"
+
+RUTA_DRIVE = "G:\pedidos programa" # <--- CAMBIAR ESTO SEGÚN TU PC
+
+# Si la carpeta no existe en tu Google Drive, el programa la crea sola
+if not os.path.exists(RUTA_DRIVE):
+    os.makedirs(RUTA_DRIVE)
+
+# Archivos locales que ahora se guardan directo en la nube de Google Drive
+ARCHIVO_PEDIDOS = os.path.join(G:\pedidos programa, "pedidos_taller.pkl")
+ARCHIVO_GASTOS = os.path.join(G:\pedidos programa, "gastos_taller.pkl")
+ARCHIVO_USUARIOS = os.path.join(G:\pedidos programa, "usuarios_taller.pkl")
+
+# --- FUNCIONES DE GUARDADO Y CARGA LOCAL ---
+def guardar_datos():
+    with open(ARCHIVO_PEDIDOS, "wb") as f:
+        pickle.dump(st.session_state.pedidos, f)
+    with open(ARCHIVO_GASTOS, "wb") as f:
+        pickle.dump(st.session_state.gastos, f)
+    with open(ARCHIVO_USUARIOS, "wb") as f:
+        pickle.dump(st.session_state.usuarios, f)
+
+def cargar_datos():
+    if os.path.exists(ARCHIVO_USUARIOS):
+        with open(ARCHIVO_USUARIOS, "rb") as f:
+            st.session_state.usuarios = pickle.load(f)
+    else:
+        st.session_state.usuarios = {"admin": "1234"}
+
+    if os.path.exists(ARCHIVO_PEDIDOS):
+        with open(ARCHIVO_PEDIDOS, "rb") as f:
+            st.session_state.pedidos = pickle.load(f)
+    else:
+        st.session_state.pedidos = pd.DataFrame(columns=[
+            "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+            "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+            "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+        ])
+
+    if os.path.exists(ARCHIVO_GASTOS):
+        with open(ARCHIVO_GASTOS, "rb") as f:
+            st.session_state.gastos = pickle.load(f)
+    else:
+        st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
+
+# ... (El resto del código de la aplicación sigue exactamente igual hacia abajo) ...
