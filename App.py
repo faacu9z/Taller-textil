@@ -25,7 +25,7 @@ if "vendedor_actual" not in st.session_state:
 
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=[
-        "ID", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "DetalleTalles", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
+        "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
     ])
 
 estados_posibles = [
@@ -97,28 +97,33 @@ with tab_nuevo:
         with col_f2:
             cantidad = st.number_input("Cantidad", min_value=1, value=10)
             diseno = st.text_input("Detalle del Diseño / Archivo")
-            archivo_pc = st.text_input("Nro de Archivo en PC (ej: 125)", value="")
+            archivo_pc = st.text_input("Nro de Archivo en PC (Opcional, se puede poner después)", value="")
             
         submitted = st.form_submit_button("Guardar y Registrar Pedido")
         if submitted and cliente:
             secuencial = len(st.session_state.pedidos) + 1
-            num_pc_str = archivo_pc.strip() if archivo_pc.strip() else "0"
-            nuevo_id = f"#{secuencial:03d}-{num_pc_str}"
+            num_pc_str = archivo_pc.strip() if archivo_pc.strip() else "S/N"
             
             ahora_argentina = datetime.utcnow() - timedelta(hours=3)
             fecha_str = ahora_argentina.strftime("%d/%m/%Y")
             hora_str = ahora_argentina.strftime("%H:%M")
             anio_str = ahora_argentina.strftime("%Y")
             
+            # DataFrame inicial vacío para la grilla de talles con las columnas solicitadas
+            df_vacio = pd.DataFrame(
+                [{"Nombre": "", "Talle": "", "Número": ""}],
+                columns=["Nombre", "Talle", "Número"]
+            )
+            
             nuevo_registro = pd.DataFrame([{
-                "ID": nuevo_id,
+                "ID_Base": secuencial,
                 "Cliente": cliente,
                 "Telefono": telefono,
                 "Prenda": prenda,
                 "Cantidad": cantidad,
                 "Diseno": diseno,
                 "ArchivoPC": num_pc_str,
-                "DetalleTalles": "",
+                "TablaTalles": df_vacio,
                 "Estado": estados_posibles[0],
                 "Vendedor": st.session_state.vendedor_actual,
                 "Fecha_Obj": ahora_argentina,
@@ -128,7 +133,7 @@ with tab_nuevo:
             }])
             
             st.session_state.pedidos = pd.concat([st.session_state.pedidos, nuevo_registro], ignore_index=True)
-            st.success(f"¡Pedido {nuevo_id} guardado con éxito!")
+            st.success(f"¡Pedido guardado con éxito!")
 
 # --- PESTAÑA 2: PEDIDOS INGRESADOS ---
 with tab_lista:
@@ -155,17 +160,25 @@ with tab_lista:
                 if diferencia.days >= 7:
                     alerta_tiempo = True
 
+            id_formateado = f"#{row['ID_Base']:03d}-{row['ArchivoPC']}"
+
             with st.container():
                 st.markdown('<div class="card-pedido">', unsafe_allow_html=True)
                 col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
                 
                 with col1:
-                    st.markdown(f"#### **{row['ID']}**")
+                    st.markdown(f"#### **{id_formateado}**")
                     if alerta_tiempo:
                         st.markdown(f'<span class="alerta-roja">📅 {row["Fecha"]} - {row["Hora"]}</span>', unsafe_allow_html=True)
                     else:
                         st.caption(f"📅 {row['Fecha']} - {row['Hora']}")
                     st.caption(f"Vendedor: {row['Vendedor']}")
+                    
+                    # Campo para editar el número de PC en cualquier momento
+                    nuevo_pc = st.text_input("Nro Archivo PC", value=row["ArchivoPC"], key=f"pc_{index}")
+                    if nuevo_pc != row["ArchivoPC"]:
+                        st.session_state.pedidos.at[index, "ArchivoPC"] = nuevo_pc.strip() if nuevo_pc.strip() else "S/N"
+                        st.rerun()
                     
                 with col2:
                     st.write(f"**Cliente:** {row['Cliente']}")
@@ -182,26 +195,31 @@ with tab_lista:
                         "Cambiar Etapa", 
                         estados_posibles, 
                         index=estados_posibles.index(row["Estado"]),
-                        key=f"estado_{row['ID']}"
+                        key=f"estado_{row['ID_Base']}"
                     )
                     if nuevo_estado != row["Estado"]:
                         st.session_state.pedidos.at[index, "Estado"] = nuevo_estado
                         st.rerun()
                     
                     if row["Telefono"]:
-                        mensaje = f"Hola {row['Cliente']}! Te escribimos de la fábrica textil para avisarte que tu pedido {row['ID']} ({row['Cantidad']} {row['Prenda']}) se encuentra en la etapa: *{row['Estado']}*."
+                        mensaje = f"Hola {row['Cliente']}! Te escribimos de la fábrica textil para avisarte que tu pedido {id_formateado} ({row['Cantidad']} {row['Prenda']}) se encuentra en la etapa: *{row['Estado']}*."
                         url_wa = f"https://wa.me/{row['Telefono']}?text={mensaje.replace(' ', '%20')}"
                         st.markdown(f"[💬 Enviar WhatsApp]({url_wa})", unsafe_allow_html=True)
 
-                # --- EXPANDER PARA VER Y EDITAR DETALLE DE TALLES Y NOMBRES ---
-                with st.expander("👕 Ver / Editar Detalle de Talles, Números y Nombres"):
-                    nuevo_detalle = st.text_area(
-                        "Lista de talles (Ej: Talle XL - 10 Juan, Talle L - 7 Pedro...)",
-                        value=row["DetalleTalles"],
-                        key=f"detalle_{row['ID']}"
+                # --- EXPANDER CON CUADRÍCULA / TABLA EDITABLE DE TALLES ---
+                with st.expander("👕 Ver / Editar Cuadrícula de Talles, Nombres y Números"):
+                    st.write("Agregá las filas necesarias con el botón '+' de la tabla:")
+                    
+                    # Tabla interactiva (Data Editor) con Columnas: Nombre | Talle | Número
+                    tabla_actualizada = st.data_editor(
+                        row["TablaTalles"],
+                        num_rows="dynamic",
+                        key=f"tabla_talles_{index}",
+                        use_container_width=True
                     )
-                    if nuevo_detalle != row["DetalleTalles"]:
-                        st.session_state.pedidos.at[index, "DetalleTalles"] = nuevo_detalle
-                        st.success("¡Detalle de talles actualizado!")
+                    
+                    # Guardar cambios automáticamente si el usuario edita la tabla
+                    if not tabla_actualizada.equals(row["TablaTalles"]):
+                        st.session_state.pedidos.at[index, "TablaTalles"] = tabla_actualizada
 
                 st.markdown('</div>', unsafe_allow_html=True)
