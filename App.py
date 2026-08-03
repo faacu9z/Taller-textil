@@ -527,3 +527,53 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import pickle
+# --- CONFIGURACIÓN DE GOOGLE DRIVE ---
+# Probemos apuntando a una ruta limpia y asegurándonos que exista
+RUTA_DRIVE = r"G:\pedidos programa"
+
+if not os.path.exists(RUTA_DRIVE):
+    try:
+        os.makedirs(RUTA_DRIVE)
+    except Exception as e:
+        st.error(f"No se pudo crear la carpeta en la ruta: {e}")
+
+ARCHIVO_PEDIDOS = os.path.join(RUTA_DRIVE, "pedidos_taller.pkl")
+ARCHIVO_GASTOS = os.path.join(RUTA_DRIVE, "gastos_taller.pkl")
+ARCHIVO_USUARIOS = os.path.join(RUTA_DRIVE, "usuarios_taller.pkl")
+
+# --- FUNCIONES DE GUARDADO Y CARGA CON CONTROL DE ERRORES ---
+def guardar_datos():
+    try:
+        with open(ARCHIVO_PEDIDOS, "wb") as f:
+            pickle.dump(st.session_state.pedidos, f)
+        with open(ARCHIVO_GASTOS, "wb") as f:
+            pickle.dump(st.session_state.gastos, f)
+        with open(ARCHIVO_USUARIOS, "wb") as f:
+            pickle.dump(st.session_state.usuarios, f)
+        # Esto te mostrará un cartelito verde arriba a la derecha si guardó con éxito
+        st.toast("¡Datos guardados correctamente en el disco!", icon="✅")
+    except Exception as e:
+        st.error(f"Error al intentar guardar los archivos en el disco: {e}")
+
+def cargar_datos():
+    if os.path.exists(ARCHIVO_USUARIOS):
+        with open(ARCHIVO_USUARIOS, "rb") as f:
+            st.session_state.usuarios = pickle.load(f)
+    else:
+        st.session_state.usuarios = {"admin": "1234"}
+
+    if os.path.exists(ARCHIVO_PEDIDOS):
+        with open(ARCHIVO_PEDIDOS, "rb") as f:
+            st.session_state.pedidos = pickle.load(f)
+    else:
+        st.session_state.pedidos = pd.DataFrame(columns=[
+            "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+            "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+            "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+        ])
+
+    if os.path.exists(ARCHIVO_GASTOS):
+        with open(ARCHIVO_GASTOS, "rb") as f:
+            st.session_state.gastos = pickle.load(f)
+    else:
+        st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
