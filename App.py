@@ -3,28 +3,60 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import pickle
-
-# --- PRUEBA DIRECTA DE ESCRITURA ---
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
 import os
-RUTA_DRIVE = r"C:\Users\TuUsuario\CarpetaPedidosTaller"
-os.makedirs(ruta_prueba, exist_ok=True)
-archivo_prueba = os.path.join(ruta_prueba, "prueba.txt")
-with open(archivo_prueba, "w") as f:
-    f.write("Hola, esto es una prueba de escritura.")
-print("Archivo de prueba creado con éxito.")
-# --- CONFIGURACIÓN DE GOOGLE DRIVE ---
-# Ahora sí tiene las comillas y la 'r' adelante para que Windows lea bien la ruta
-RUTA_DRIVE = r"C:\Users\TuUsuario\CarpetaPedidosTaller"
+import pickle
 
-# Si la carpeta no existe, el programa la crea sola
-if not os.path.exists(RUTA_DRIVE):r"C:\Users\TuUsuario\CarpetaPedidosTaller"
-    os.makedirs(RUTA_DRIVE)
+# --- CONFIGURACIÓN DE RUTA PARA GOOGLE DRIVE (O CARPETA LOCAL) ---
+# Usamos una carpeta directa en el disco C para que Windows y Streamlit escriban sin bloqueos.
+# Después vinculas esta carpeta con la app de Google Drive en tu PC.
+RUTA_DRIVE = C:\Users\FERNANDO-PC\Documents\pedidos programa
 
-# Archivos locales que ahora se guardan directo en la nube de Google Drive
+# Nos aseguramos de que la carpeta exista físicamente
+os.makedirs(RUTA_DRIVE, exist_ok=True)
+
+# Archivos donde se guardarán los datos
 ARCHIVO_PEDIDOS = os.path.join(RUTA_DRIVE, "pedidos_taller.pkl")
 ARCHIVO_GASTOS = os.path.join(RUTA_DRIVE, "gastos_taller.pkl")
 ARCHIVO_USUARIOS = os.path.join(RUTA_DRIVE, "usuarios_taller.pkl")
 
+# --- FUNCIONES DE GUARDADO Y CARGA ---
+def guardar_datos():
+    try:
+        with open(ARCHIVO_PEDIDOS, "wb") as f:
+            pickle.dump(st.session_state.pedidos, f)
+        with open(ARCHIVO_GASTOS, "wb") as f:
+            pickle.dump(st.session_state.gastos, f)
+        with open(ARCHIVO_USUARIOS, "wb") as f:
+            pickle.dump(st.session_state.usuarios, f)
+        st.toast("¡Datos guardados correctamente!", icon="✅")
+    except Exception as e:
+        st.error(f"Error al guardar: {e}")
+
+def cargar_datos():
+    if os.path.exists(ARCHIVO_USUARIOS):
+        with open(ARCHIVO_USUARIOS, "rb") as f:
+            st.session_state.usuarios = pickle.load(f)
+    else:
+        st.session_state.usuarios = {"admin": "1234"}
+
+    if os.path.exists(ARCHIVO_PEDIDOS):
+        with open(ARCHIVO_PEDIDOS, "rb") as f:
+            st.session_state.pedidos = pickle.load(f)
+    else:
+        st.session_state.pedidos = pd.DataFrame(columns=[
+            "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", 
+            "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio",
+            "Precio_Total", "Sena", "Total_Pagado", "Saldo", "Historial_Pagos"
+        ])
+
+    if os.path.exists(ARCHIVO_GASTOS):
+        with open(ARCHIVO_GASTOS, "rb") as f:
+            st.session_state.gastos = pickle.load(f)
+    else:
+        st.session_state.gastos = pd.DataFrame(columns=["Fecha_Obj", "Fecha", "Item", "Cantidad", "Precio_Unitario", "Total"])
 # --- FUNCIONES DE GUARDADO Y CARGA LOCAL ---
 def guardar_datos():
     with open(ARCHIVO_PEDIDOS, "wb") as f:
