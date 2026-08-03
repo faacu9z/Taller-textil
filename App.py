@@ -14,10 +14,10 @@ with open(archivo_prueba, "w") as f:
 print("Archivo de prueba creado con éxito.")
 # --- CONFIGURACIÓN DE GOOGLE DRIVE ---
 # Ahora sí tiene las comillas y la 'r' adelante para que Windows lea bien la ruta
-RUTA_DRIVE = r"G:\pedidos programa"
+RUTA_DRIVE = r"C:\Users\TuUsuario\CarpetaPedidosTaller"
 
 # Si la carpeta no existe, el programa la crea sola
-if not os.path.exists(RUTA_DRIVE):
+if not os.path.exists(RUTA_DRIVE):r"C:\Users\TuUsuario\CarpetaPedidosTaller"
     os.makedirs(RUTA_DRIVE)
 
 # Archivos locales que ahora se guardan directo en la nube de Google Drive
