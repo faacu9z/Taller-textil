@@ -14,6 +14,7 @@ st.markdown("""
     .card-pedido { background: white; padding: 15px 20px; border-radius: 10px; border: 1px solid #EAEAEA; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .alerta-roja { color: #D32F2F; font-weight: bold; background-color: #FFEBEE; padding: 2px 6px; border-radius: 4px; }
     .metric-card { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    .col-bloque { background: white; padding: 20px; border-radius: 10px; border: 1px solid #EAEAEA; box-shadow: 0 2px 4px rgba(0,0,0,0.02); height: 100%; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -119,88 +120,93 @@ if st.session_state.pedido_seleccionado is not None:
 
     st.markdown(f"## 📂 Detalle del Pedido: {id_formateado}")
     
-    col_det1, col_det2, col_det3 = st.columns(3)
-    with col_det1:
-        st.write(f"**Cliente:** {row['Cliente']}")
-        st.write(f"📲 **WhatsApp:** {row['Telefono']}")
-        st.write(f"👤 **Vendedor que tomó pedido:** {row['Vendedor']}")
-    with col_det2:
-        st.write(f"**Prenda:** {row['Prenda']} (x{row['Cantidad']})")
-        st.write(f"🎨 **Diseño:** {row['Diseno']}")
-    with col_det3:
-        st.write(f"📅 **Fecha ingreso:** {row['Fecha']} - {row['Hora']}")
-        nuevo_est_det = st.selectbox("Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]), key="est_det_unico")
+    # --- BLOQUES SEPARADOS: DATOS vs FINANZAS ---
+    col_izq, col_der = st.columns([1, 1.3])
+    
+    with col_izq:
+        st.markdown("<div class='col-bloque'>", unsafe_allow_html=True)
+        st.markdown("### 📋 Datos Generales")
+        st.write(f"**👤 Cliente:** {row['Cliente']}")
+        st.write(f"**📲 WhatsApp:** {row['Telefono']}")
+        st.write(f"**🤝 Vendedor:** {row['Vendedor']}")
+        st.write(f"**📅 Ingreso:** {row['Fecha']} - {row['Hora']}")
+        
+        st.divider()
+        
+        st.write(f"**👕 Prenda:** {row['Prenda']} (x{row['Cantidad']})")
+        st.write(f"**🎨 Diseño:** {row['Diseno']}")
+        
+        st.divider()
+        
+        st.write("**📌 Estado del Pedido:**")
+        nuevo_est_det = st.selectbox("Estado Actual", estados_posibles, index=estados_posibles.index(row["Estado"]), key="est_det_unico", label_visibility="collapsed")
         if nuevo_est_det != row["Estado"]:
             st.session_state.pedidos.at[idx, "Estado"] = nuevo_est_det
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.divider()
+    with col_der:
+        st.markdown("<div class='col-bloque'>", unsafe_allow_html=True)
+        st.markdown("### 💰 Finanzas y Pagos")
+        
+        # Métricas de resumen compactas
+        c_m1, c_m2, c_m3 = st.columns(3)
+        c_m1.metric("Precio Acordado", f"${row['Precio_Total']:,.0f}")
+        c_m2.metric("Abonado", f"${row['Total_Pagado']:,.0f}")
+        c_m3.metric("Falta Pagar", f"${row['Saldo']:,.0f}")
 
-    # --- HISTORIAL FINANCIERO DEL PEDIDO ---
-    st.markdown("### 💰 Finanzas y Pagos")
-    
-    # Métricas resumen
-    col_r1, col_r2, col_r3 = st.columns(3)
-    col_r1.metric("Precio Total Acordado", f"${row['Precio_Total']:,.2f}")
-    col_r2.metric("Total Pagado (Abonado)", f"${row['Total_Pagado']:,.2f}")
-    col_r3.metric("Saldo Restante (Falta Pagar)", f"${row['Saldo']:,.2f}")
-
-    # Tabla de Historial
-    st.markdown("#### 📜 Archivo Histórico de Pagos")
-    if isinstance(row['Historial_Pagos'], list) and len(row['Historial_Pagos']) > 0:
-        df_historial = pd.DataFrame(row['Historial_Pagos']).drop(columns=["Fecha_Obj"])
-        st.dataframe(df_historial, use_container_width=True, hide_index=True)
-    else:
-        st.info("Aún no se registraron señas ni pagos para este pedido.")
-
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if row['Saldo'] > 0:
-            with st.expander("➕ Registrar Pago de Saldo (Cancelación)"):
-                with st.form(f"form_pago_{idx}"):
-                    st.write("Registrá el ingreso de dinero y actualizá el saldo.")
-                    monto_a_pagar = st.number_input("Monto a Abonar ($)", min_value=0.0, max_value=float(row['Saldo']), value=float(row['Saldo']), step=1000.0)
-                    medio_pago_saldo = st.selectbox("Medio de Pago", medios_pago)
-                    
-                    if st.form_submit_button("Confirmar Pago"):
-                        if monto_a_pagar > 0:
-                            ahora = datetime.utcnow() - timedelta(hours=3)
-                            nuevo_pago = {
-                                "Fecha_Obj": ahora,
-                                "Fecha": ahora.strftime("%d/%m/%Y"),
-                                "Hora": ahora.strftime("%H:%M"),
-                                "Vendedor": st.session_state.vendedor_actual,
-                                "Concepto": "Cancelación de Saldo",
-                                "Monto": monto_a_pagar,
-                                "Medio": medio_pago_saldo
-                            }
-                            
-                            historial_actual = row['Historial_Pagos']
-                            if not isinstance(historial_actual, list): historial_actual = []
-                            historial_actual.append(nuevo_pago)
-                            
-                            nuevo_pagado = row['Total_Pagado'] + monto_a_pagar
-                            
-                            st.session_state.pedidos.at[idx, "Historial_Pagos"] = historial_actual
-                            st.session_state.pedidos.at[idx, "Total_Pagado"] = nuevo_pagado
-                            st.session_state.pedidos.at[idx, "Saldo"] = row['Precio_Total'] - nuevo_pagado
-                            st.success("¡Pago registrado en el historial!")
-                            st.rerun()
+        st.markdown("#### 📜 Historial de Pagos")
+        if isinstance(row['Historial_Pagos'], list) and len(row['Historial_Pagos']) > 0:
+            df_historial = pd.DataFrame(row['Historial_Pagos']).drop(columns=["Fecha_Obj"])
+            st.dataframe(df_historial, use_container_width=True, hide_index=True)
         else:
-            st.success("✅ Este pedido se encuentra totalmente PAGADO.")
+            st.info("Aún no se registraron señas ni pagos.")
 
-    with col_btn2:
-        with st.expander("✏️ Modificar Precio Total del Pedido"):
-            with st.form(f"form_precio_{idx}"):
-                nuevo_precio = st.number_input("Nuevo Precio Total ($)", min_value=float(row['Total_Pagado']), value=float(row['Precio_Total']), step=1000.0)
-                if st.form_submit_button("Actualizar Precio"):
-                    st.session_state.pedidos.at[idx, "Precio_Total"] = nuevo_precio
-                    st.session_state.pedidos.at[idx, "Saldo"] = nuevo_precio - row['Total_Pagado']
-                    st.success("Precio actualizado.")
-                    st.rerun()
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if row['Saldo'] > 0:
+                with st.expander("➕ Pagar Saldo"):
+                    with st.form(f"form_pago_{idx}"):
+                        monto_a_pagar = st.number_input("Monto ($)", min_value=0.0, max_value=float(row['Saldo']), value=float(row['Saldo']), step=1000.0)
+                        medio_pago_saldo = st.selectbox("Medio de Pago", medios_pago)
+                        if st.form_submit_button("Confirmar"):
+                            if monto_a_pagar > 0:
+                                ahora = datetime.utcnow() - timedelta(hours=3)
+                                nuevo_pago = {
+                                    "Fecha_Obj": ahora,
+                                    "Fecha": ahora.strftime("%d/%m/%Y"),
+                                    "Hora": ahora.strftime("%H:%M"),
+                                    "Vendedor": st.session_state.vendedor_actual,
+                                    "Concepto": "Pago de Saldo",
+                                    "Monto": monto_a_pagar,
+                                    "Medio": medio_pago_saldo
+                                }
+                                historial_actual = row['Historial_Pagos']
+                                if not isinstance(historial_actual, list): historial_actual = []
+                                historial_actual.append(nuevo_pago)
+                                nuevo_pagado = row['Total_Pagado'] + monto_a_pagar
+                                st.session_state.pedidos.at[idx, "Historial_Pagos"] = historial_actual
+                                st.session_state.pedidos.at[idx, "Total_Pagado"] = nuevo_pagado
+                                st.session_state.pedidos.at[idx, "Saldo"] = row['Precio_Total'] - nuevo_pagado
+                                st.success("Pago registrado!")
+                                st.rerun()
+            else:
+                st.success("✅ PAGADO COMPLETAMENTE")
+
+        with col_btn2:
+            with st.expander("✏️ Editar Precio Total"):
+                with st.form(f"form_precio_{idx}"):
+                    nuevo_precio = st.number_input("Precio ($)", min_value=float(row['Total_Pagado']), value=float(row['Precio_Total']), step=1000.0)
+                    if st.form_submit_button("Actualizar"):
+                        st.session_state.pedidos.at[idx, "Precio_Total"] = nuevo_precio
+                        st.session_state.pedidos.at[idx, "Saldo"] = nuevo_precio - row['Total_Pagado']
+                        st.success("Actualizado.")
+                        st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
 
+    # --- LISTA DE TALLES, OBSERVACIONES E IMAGEN ---
     st.markdown("### 📋 Talles y Nombres")
     if st.button("✅ Marcar TODOS con Short"):
         df_temp = row["TablaTalles"].copy()
@@ -366,7 +372,6 @@ with tab_lista:
 with tab_finanzas:
     st.markdown("### 📊 Control de Finanzas y Stock")
     
-    # Selector de período
     periodo = st.radio("Seleccione el período de análisis:", ["Semanal", "Mensual", "Anual", "Histórico Total"], horizontal=True)
     
     hoy = datetime.utcnow() - timedelta(hours=3)
@@ -382,10 +387,9 @@ with tab_finanzas:
         inicio_periodo = hoy.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         lbl_periodo = "del Año"
     else:
-        inicio_periodo = datetime(2000, 1, 1) # Fecha antigua para incluir todo
+        inicio_periodo = datetime(2000, 1, 1)
         lbl_periodo = "Total"
     
-    # 1. Calcular Ingresos reales leyendo el historial de pagos
     total_ingresos = 0.0
     for pagos_lista in st.session_state.pedidos["Historial_Pagos"]:
         if isinstance(pagos_lista, list):
@@ -393,7 +397,6 @@ with tab_finanzas:
                 if "Fecha_Obj" in pago and pago["Fecha_Obj"] >= inicio_periodo:
                     total_ingresos += float(pago["Monto"])
                     
-    # 2. Calcular Gastos reales del período seleccionado
     gastos_periodo = st.session_state.gastos[st.session_state.gastos["Fecha_Obj"] >= inicio_periodo]
     total_gastos = gastos_periodo["Total"].sum() if not gastos_periodo.empty else 0.0
     
