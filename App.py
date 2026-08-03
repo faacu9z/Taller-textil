@@ -125,7 +125,6 @@ if st.session_state.pedido_seleccionado is not None:
     df_actual["Talle"] = df_actual["Talle"].astype(str)
     df_actual["Número"] = df_actual["Número"].astype(str)
 
-    # El data_editor guarda los cambios de manera fluida sin requerir un form global que recargue todo
     tabla_editada = st.data_editor(
         df_actual,
         num_rows="dynamic",
