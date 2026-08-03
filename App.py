@@ -3,6 +3,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 from pathlib import Path
+from PIL import Image
+import io
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", layout="wide")
@@ -11,6 +13,8 @@ st.set_page_config(page_title="Gestión de Taller Textil", page_icon="🧵", lay
 CARPETA_DATOS = Path.home() / "TallerTextilData"
 CARPETA_DATOS.mkdir(parents=True, exist_ok=True)
 ARCH_EXCEL = CARPETA_DATOS / "base_datos_taller.xlsx"
+CARPETA_IMGS = CARPETA_DATOS / "imagenes"
+CARPETA_IMGS.mkdir(parents=True, exist_ok=True)
 
 # --- FUNCIONES DE PERSISTENCIA LOCAL (EXCEL) ---
 def cargar_datos_iniciales():
@@ -24,6 +28,8 @@ def cargar_datos_iniciales():
                 df_p = pd.read_excel(ARCH_EXCEL, sheet_name="Pedidos")
                 if "Historial_Pagos" in df_p.columns:
                     df_p["Historial_Pagos"] = df_p["Historial_Pagos"].apply(lambda x: eval(x) if pd.notnull(x) and x != "" else [])
+                if "TablaTalles" in df_p.columns:
+                    df_p["TablaTalles"] = df_p["TablaTalles"].apply(lambda x: eval(x) if pd.notnull(x) and x != "" else [{"Nombre": "", "Talle": "", "Número": ""}])
                 st.session_state.pedidos = df_p
             except:
                 st.session_state.pedidos = pd.DataFrame(columns=[
@@ -54,6 +60,8 @@ def guardar_en_disco():
             df_p_guardar = st.session_state.pedidos.copy()
             if "Historial_Pagos" in df_p_guardar.columns:
                 df_p_guardar["Historial_Pagos"] = df_p_guardar["Historial_Pagos"].astype(str)
+            if "TablaTalles" in df_p_guardar.columns:
+                df_p_guardar["TablaTalles"] = df_p_guardar["TablaTalles"].astype(str)
             
             df_p_guardar.to_excel(writer, sheet_name="Pedidos", index=False)
             st.session_state.gastos.to_excel(writer, sheet_name="Gastos", index=False)
@@ -182,6 +190,62 @@ if st.session_state.pedido_seleccionado is not None:
                         guardar_en_disco()
                         st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # --- NUEVOS APARTADOS: TABLA DE TALLES, OBSERVACIONES E IMAGEN ---
+    st.markdown("### 📝 Control de Talles, Observaciones e Imagen")
+    
+    col_t1, col_t2 = st.columns([1.2, 1])
+    
+    with col_t1:
+        st.markdown("#### 📏 Tabla (Nombre, Talle, Número)")
+        talles_actuales = row['TablaTalles'] if isinstance(row['TablaTalles'], list) else [{"Nombre": "", "Talle": "", "Número": ""}]
+        df_talles_input = pd.DataFrame(talles_actuales)
+        
+        # Editor de datos interactivo para Nombre, Talle y Número
+        df_editado = st.data_editor(
+            df_talles_input,
+            num_rows="dynamic",
+            use_container_width=True,
+            key=f"editor_talles_{idx}"
+        )
+        
+        if st.button("Guardar Cambios de Talles", key=f"btn_guardar_talles_{idx}"):
+            st.session_state.pedidos.at[idx, "TablaTalles"] = df_editado.to_dict(orient="records")
+            guardar_en_disco()
+            st.success("¡Talles guardados con éxito!")
+
+        st.markdown("---")
+        st.markdown("#### 📌 Observaciones")
+        obs_actual = row['Observaciones'] if pd.notnull(row['Observaciones']) else ""
+        nuevas_obs = st.text_area("Notas o detalles adicionales del pedido", value=obs_actual, key=f"obs_{idx}")
+        if nuevas_obs != obs_actual:
+            st.session_state.pedidos.at[idx, "Observaciones"] = nuevas_obs
+            guardar_en_disco()
+
+    with col_t2:
+        st.markdown("#### 🖼️ Imagen del Pedido o Diseño")
+        img_actual = row['Imagen']
+        
+        if img_actual and isinstance(img_actual, str) and os.path.exists(img_actual):
+            st.image(img_actual, caption="Imagen guardada", use_column_width=True)
+            if st.button("Eliminar imagen actual", key=f"del_img_{idx}"):
+                st.session_state.pedidos.at[idx, "Imagen"] = None
+                guardar_en_disco()
+                st.rerun()
+        else:
+            archivo_subido = st.file_uploader("Subir imagen (PNG, JPG)", type=["png", "jpg", "jpeg"], key=f"uploader_{idx}")
+            if archivo_subido is not None:
+                img = Image.open(archivo_subido)
+                nombre_img = f"pedido_{row['ID_Base']}_{int(datetime.utcnow().timestamp())}.png"
+                ruta_img = CARPETA_IMGS / nombre_img
+                img.save(ruta_img)
+                st.session_state.pedidos.at[idx, "Imagen"] = str(ruta_img)
+                guardar_en_disco()
+                st.success("¡Imagen guardada!")
+                st.rerun()
+
     st.stop()
 
 # --- BARRA SUPERIOR ---
@@ -217,7 +281,7 @@ with tab_nuevo:
             
             nuevo_df = pd.DataFrame([{
                 "ID_Base": len(st.session_state.pedidos) + 1, "Cliente": cliente, "Telefono": telefono, "Prenda": prenda, "Cantidad": cantidad,
-                "Diseno": diseno, "ArchivoPC": archivo_pc, "TablaTalles": str([{"Nombre": "", "Talle": "", "Número": "", "Short": False}]),
+                "Diseno": diseno, "ArchivoPC": archivo_pc, "TablaTalles": [{"Nombre": "", "Talle": "", "Número": ""}],
                 "Observaciones": "", "Imagen": None, "Estado": estados_posibles[0], "Vendedor": st.session_state.vendedor_actual,
                 "Fecha_Obj": ahora, "Fecha": ahora.strftime("%d/%m/%Y"), "Hora": ahora.strftime("%H:%M"), "Anio": ahora.strftime("%Y"),
                 "Precio_Total": precio_tot, "Sena": sena, "Total_Pagado": sena, "Saldo": precio_tot - sena, "Historial_Pagos": historial_inicial
