@@ -357,32 +357,6 @@ def registrar_usuario(
 
         return False, "Complete todos los campos"
 
-
-    if existe_usuario(usuario):
-
-        return False, "El usuario ya existe"
-
-
-
-    conexion = conectar()
-
-    cursor = conexion.cursor()
-
-
-    try:
-
-        cursor.execute(
-            """
-            INSERT INTO usuarios
-            (
-                usuario,
-                password,
-                fecha_creacion
-            )
-
-            VALUES (?,?,?)
-            """,
-
             (
                 usuario.strip(),
 
@@ -391,7 +365,36 @@ def registrar_usuario(
                 datetime.now().strftime(
                     "%d/%m/%Y %H:%M"
                 )
-                # ==========================================
+
+            )
+
+        )
+
+
+        conexion.commit()
+
+
+        return True, "Usuario creado correctamente"
+
+
+
+    except Exception as error:
+
+
+        conexion.rollback()
+
+
+        return False, str(error)
+
+
+
+    finally:
+
+        conexion.close()
+
+
+
+# ==========================================
 # OBTENER USUARIO POR ID
 # ==========================================
 
