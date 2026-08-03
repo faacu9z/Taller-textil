@@ -6,7 +6,7 @@ import pickle
 
 # --- PRUEBA DIRECTA DE ESCRITURA ---
 import os
-ruta_prueba = r"G:\pedidos programa"
+RUTA_DRIVE = r"C:\Users\TuUsuario\CarpetaPedidosTaller"
 os.makedirs(ruta_prueba, exist_ok=True)
 archivo_prueba = os.path.join(ruta_prueba, "prueba.txt")
 with open(archivo_prueba, "w") as f:
