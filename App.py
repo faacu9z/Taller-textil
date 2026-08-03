@@ -204,6 +204,18 @@ with tab_lista:
 with tab_finanzas:
     st.markdown("### 📊 Control de Finanzas y Stock")
     
+    # Cálculo de métricas generales de ingresos y gastos
+    total_ingresos = st.session_state.pedidos["Total_Pagado"].sum() if not st.session_state.pedidos.empty else 0.0
+    total_gastos = st.session_state.gastos["Total"].sum() if not st.session_state.gastos.empty else 0.0
+    balance_neto = total_ingresos - total_gastos
+
+    c_f1, c_f2, c_f3 = st.columns(3)
+    c_f1.metric("💵 Total Ingresado (Señas y Pagos)", f"${total_ingresos:,.0f}")
+    c_f2.metric("🛒 Total Gastado (Insumos)", f"${total_gastos:,.0f}")
+    c_f3.metric("📈 Balance Neto", f"${balance_neto:,.0f}", delta=f"${balance_neto:,.0f}")
+    
+    st.divider()
+
     col_g1, col_g2 = st.columns([1, 2])
     with col_g1:
         st.markdown("#### 🛒 Registrar Gasto")
