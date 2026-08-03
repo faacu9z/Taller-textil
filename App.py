@@ -28,7 +28,7 @@ if "pedido_seleccionado" not in st.session_state:
 
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = pd.DataFrame(columns=[
-        "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", "Observaciones", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
+        "ID_Base", "Cliente", "Telefono", "Prenda", "Cantidad", "Diseno", "ArchivoPC", "TablaTalles", "Observaciones", "Imagen", "Estado", "Vendedor", "Fecha_Obj", "Fecha", "Hora", "Anio"
     ])
 
 estados_posibles = [
@@ -117,7 +117,6 @@ if st.session_state.pedido_seleccionado is not None:
                 st.success("¡Se marcó que todos llevan short!")
                 st.rerun()
 
-    # Usar un formulario contenedor para que los cambios en la tabla no recarguen la página al escribir cada letra
     with st.form(f"form_tabla_talles_{idx}"):
         df_actual = row["TablaTalles"].copy()
         if "Short" not in df_actual.columns:
@@ -153,6 +152,23 @@ if st.session_state.pedido_seleccionado is not None:
     nueva_obs = st.text_area("Agregue notas, aclaraciones o detalles adicionales del pedido:", value=obs_actual, key=f"obs_texto_{idx}")
     if nueva_obs != obs_actual:
         st.session_state.pedidos.at[idx, "Observaciones"] = nueva_obs
+
+    st.divider()
+
+    # --- SECCIÓN DE IMAGEN PARA IDENTIFICAR EL PEDIDO (UBICADA ABAJO DE TODO) ---
+    st.markdown("### 🖼️ Imagen de Referencia del Pedido")
+    archivo_imagen = st.file_uploader("Subir imagen (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key=f"img_subida_{idx}")
+    
+    if archivo_imagen is not None:
+        st.session_state.pedidos.at[idx, "Imagen"] = archivo_imagen
+        st.success("¡Imagen cargada con éxito!")
+
+    # Mostrar la imagen actual si existe en el registro
+    if "Imagen" in row and row["Imagen"] is not None:
+        st.image(row["Imagen"], caption=f"Referencia visual - Pedido {id_formateado}", use_column_width=True)
+        if st.button("🗑️ Eliminar Imagen", key=f"btn_eliminar_img_{idx}"):
+            st.session_state.pedidos.at[idx, "Imagen"] = None
+            st.rerun()
 
     st.stop()
 
@@ -210,6 +226,7 @@ with tab_nuevo:
                 "ArchivoPC": num_pc_str,
                 "TablaTalles": df_vacio,
                 "Observaciones": "",
+                "Imagen": None,
                 "Estado": estados_posibles[0],
                 "Vendedor": st.session_state.vendedor_actual,
                 "Fecha_Obj": ahora_argentina,
@@ -228,7 +245,6 @@ with tab_lista:
     if st.session_state.pedidos.empty:
         st.info("No hay pedidos cargados todavía.")
     else:
-        # Controles de filtrado y búsqueda
         col_filtro1, col_filtro2 = st.columns([1, 1])
         with col_filtro1:
             filtro_estado = st.selectbox("Filtrar por Etapa:", ["Todos"] + estados_posibles, key="filtro_estado_lista")
@@ -237,14 +253,11 @@ with tab_lista:
         
         df_mostrar = st.session_state.pedidos.copy()
         
-        # Aplicar filtro por estado
         if filtro_estado != "Todos":
             df_mostrar = df_mostrar[df_mostrar["Estado"] == filtro_estado]
 
-        # Aplicar buscador por número de pedido (ID_Base) o número de PC
         if busqueda.strip():
             termino = busqueda.strip().replace("#", "")
-            # Filtrar si coincide el ID_Base o el ArchivoPC
             df_mostrar = df_mostrar[
                 df_mostrar["ID_Base"].astype(str).str.contains(termino, case=False, na=False) |
                 df_mostrar["ArchivoPC"].astype(str).str.contains(termino, case=False, na=False)
